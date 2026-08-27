@@ -1,0 +1,13 @@
+# Ambiente virtual
+venv/
+.venv/
+env/
+
+# Banco de dados e arquivos temporários do projeto
+*.pickle
+*.dat
+*.xml
+
+# Arquivos do sistema operacional
+.DS_Store
+Thumbs.db
