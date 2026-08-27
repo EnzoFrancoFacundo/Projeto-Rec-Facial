@@ -1,151 +1,109 @@
 import os
 import shutil
-import pickle
+from database import FaceDatabase
 
 DATASET_DIR = "dataset"
-ENCODINGS_FILE = "encodings.pickle"
 
-
-def listar_cadastros():
-    if not os.path.exists(DATASET_DIR):
-        print("\n❌ Nenhum cadastro encontrado. A pasta 'dataset' ainda não existe.")
-        input("\nPressione [Enter] para voltar ao menu...")
-        return []
-
-    pessoas = sorted([p for p in os.listdir(DATASET_DIR) if os.path.isdir(os.path.join(DATASET_DIR, p))])
-
-    if not pessoas:
-        print("\n Nenhuma pessoa cadastrada no momento.")
-        input("\nPressione [Enter] para voltar ao menu...")
-        return []
-
-    print("\n--- PESSOAS CADASTRADAS ---")
-    for i, nome in enumerate(pessoas, 1):
-        caminho = os.path.join(DATASET_DIR, nome)
-        num_fotos = len(os.listdir(caminho))
-        print(f"{i}. {nome} ({num_fotos} fotos)")
-    print("---------------------------")
-    
-    # Ajuste da Opção 1: Agora aguarda o usuário ler antes de limpar a tela ou voltar pro menu
-    input("\nPressione [Enter] para voltar ao menu...")
-    return pessoas
-
-
-def editar_nome():
-    # Uma versão temporária do listar que não trava com input no meio da edição
-    if not os.path.exists(DATASET_DIR):
-        print("\n❌ Pasta 'dataset' não encontrada.")
+def listar_cadastros(db):
+    users = db.get_all_users()
+    if not users:
+        print("\n❌ Nenhum usuário cadastrado!")
         return
-    pessoas = sorted([p for p in os.listdir(DATASET_DIR) if os.path.isdir(os.path.join(DATASET_DIR, p))])
-    if not pessoas:
-        print("\nNenhuma pessoa cadastrada para editar.")
+    print("\n👥 USUÁRIOS CADASTRADOS:")
+    for user_id, name, created_at in users:
+        encodings = db.get_encodings_by_user(user_id)
+        print(f"  [{user_id}] {name} - {len(encodings)} encodings")
+    input("\nPressione [Enter] para continuar...")
+
+def editar_nome(db):
+    users = db.get_all_users()
+    if not users:
+        print("\n❌ Nenhum usuário cadastrado!")
         return
-
-    print("\n--- SELECIONE PARA RENOMEAR ---")
-    for i, nome in enumerate(pessoas, 1):
-        print(f"{i}. {nome}")
-    print("--------------------------------")
-
-    nome_antigo = input("\nDigite o Nome exato da pessoa que deseja renomear: ").strip()
-    caminho_antigo = os.path.join(DATASET_DIR, nome_antigo)
-
-    if not os.path.exists(caminho_antigo):
-        print(f"❌ [ERRO] O cadastro '{nome_antigo}' não foi encontrado.")
+    print("\n📝 SELECIONE O USUÁRIO:")
+    for user_id, name, _ in users:
+        print(f"  [{user_id}] {name}")
+    try:
+        user_id = int(input("\nDigite o ID do usuário: "))
+    except ValueError:
+        print("❌ ID inválido!")
         return
-
-    novo_nome = input(f"Digite o NOVO nome para '{nome_antigo}': ").strip()
+    user = db.get_user_by_id(user_id)
+    if not user:
+        print("❌ Usuário não encontrado!")
+        return
+    old_name = user[1]
+    novo_nome = input(f"Digite o NOVO nome para '{old_name}': ").strip()
     if not novo_nome:
-        print("❌ [ERRO] O nome não pode ser vazio.")
+        print("❌ Nome não pode ser vazio!")
         return
-
-    caminho_novo = os.path.join(DATASET_DIR, novo_nome)
-    if os.path.exists(caminho_novo):
-        print(f"❌ [ERRO] Já existe uma pessoa cadastrada com o nome '{novo_nome}'.")
-        return
-
-    os.rename(caminho_antigo, caminho_novo)
-    print(f"\nSucesso! '{nome_antigo}' foi alterado para '{novo_nome}'.")
-    print("IMPORTANTE: Execute 'python treinar.py' para atualizar as assinaturas faciais.")
-
-
-def apagar_cadastro():
-    if not os.path.exists(DATASET_DIR):
-        print("\n❌ Pasta 'dataset' não encontrada.")
-        return
-    pessoas = sorted([p for p in os.listdir(DATASET_DIR) if os.path.isdir(os.path.join(DATASET_DIR, p))])
-    if not pessoas:
-        print("\n Nenhuma pessoa cadastrada para apagar.")
-        return
-
-    print("\n--- SELECIONE PARA APAGAR ---")
-    for i, nome in enumerate(pessoas, 1):
-        print(f"{i}. {nome}")
-    print("------------------------------")
-
-    nome_para_apagar = input("\nDigite o Nome exato da pessoa que deseja APAGAR: ").strip()
-    caminho_pasta = os.path.join(DATASET_DIR, nome_para_apagar)
-
-    if not os.path.exists(caminho_pasta):
-        print(f"❌ [ERRO] O cadastro '{nome_para_apagar}' não foi encontrado.")
-        return
-
-    confirmacao = input(f" Tem certeza que deseja apagar PERMANENTEMENTE '{nome_para_apagar}' e remover seus dados da IA? (s/n): ").strip().lower()
-    if confirmacao == 's':
-        # 1. Deleta a pasta física de fotos
-        shutil.rmtree(caminho_pasta)
-        print(f"🗑️ Pasta de fotos de '{nome_para_apagar}' removida.")
-
-        # 2. Abre o encodings.pickle e limpa os dados da memória da IA na mesma hora
-        if os.path.exists(ENCODINGS_FILE):
-            try:
-                with open(ENCODINGS_FILE, "rb") as f:
-                    dados = pickle.load(f)
-
-                encodings_antigos = dados["encodings"]
-                nomes_antigos = dados["names"]
-
-                # Filtra mantendo apenas quem NÃO for a pessoa apagada
-                indices_para_manter = [i for i, n in enumerate(nomes_antigos) if n.lower() != nome_para_apagar.lower()]
-                
-                encodings_novos = [encodings_antigos[i] for i in indices_para_manter]
-                nomes_novos = [nomes_antigos[i] for i in indices_para_manter]
-
-                # Salva o arquivo atualizado sem rastros da pessoa deletada
-                dados_atualizados = {"encodings": encodings_novos, "names": nomes_novos}
-                with open(ENCODINGS_FILE, "wb") as f:
-                    pickle.dump(dados_atualizados, f)
-                
-                print(f" Assinaturas faciais de '{nome_para_apagar}' removidas com sucesso do '{ENCODINGS_FILE}'.")
-            except Exception as e:
-                print(f"⚠️ Erro ao atualizar o arquivo pickle: {e}")
-        else:
-            print("Arquivo 'encodings.pickle' não existia, portanto nenhum dado de IA precisou ser limpo.")
+    if db.update_user_name(old_name, novo_nome):
+        old_path = os.path.join(DATASET_DIR, old_name)
+        new_path = os.path.join(DATASET_DIR, novo_nome)
+        if os.path.exists(old_path):
+            os.rename(old_path, new_path)
+        print(f"✅ Nome alterado para '{novo_nome}'")
     else:
-        print("\n❌ Operação cancelada.")
+        print("❌ Erro ao renomear")
 
+def apagar_cadastro(db):
+    users = db.get_all_users()
+    if not users:
+        print("\n❌ Nenhum usuário cadastrado!")
+        return
+    print("\n🗑️ SELECIONE O USUÁRIO:")
+    for user_id, name, _ in users:
+        print(f"  [{user_id}] {name}")
+    try:
+        user_id = int(input("\nDigite o ID do usuário: "))
+    except ValueError:
+        print("❌ ID inválido!")
+        return
+    user = db.get_user_by_id(user_id)
+    if not user:
+        print("❌ Usuário não encontrado!")
+        return
+    name = user[1]
+    confirmacao = input(f"⚠️ Apagar PERMANENTEMENTE '{name}'? (s/n): ").strip().lower()
+    if confirmacao == 's':
+        if db.delete_user(name):
+            pasta_path = os.path.join(DATASET_DIR, name)
+            if os.path.exists(pasta_path):
+                shutil.rmtree(pasta_path)
+            print(f"✅ Usuário '{name}' removido!")
+        else:
+            print("❌ Erro ao remover")
+    else:
+        print("❌ Cancelado.")
 
 def menu():
+    db = FaceDatabase()
     while True:
-        print("\n=== GERENCIADOR DE CADASTROS ===")
-        print("1. Listar todas as pessoas")
-        print("2. Renomear uma pessoa")
-        print("3. Apagar uma pessoa")
-        print("4. Sair")
-
-        opcao = input("\nEscolha uma opção (1-4): ").strip()
-
+        print("\n=== GERENCIADOR - SQLite ===")
+        print("1. Listar pessoas")
+        print("2. Renomear pessoa")
+        print("3. Apagar pessoa")
+        print("4. Estatísticas")
+        print("5. Sair")
+        opcao = input("\nOpção (1-5): ")
         if opcao == "1":
-            listar_cadastros()
+            listar_cadastros(db)
         elif opcao == "2":
-            editar_nome()
+            editar_nome(db)
         elif opcao == "3":
-            apagar_cadastro()
+            apagar_cadastro(db)
         elif opcao == "4":
-            print("Saindo do gerenciador...")
+            stats = db.get_stats()
+            print(f"\n📊 Estatísticas:")
+            print(f"  Usuários: {stats['total_users']}")
+            print(f"  Encodings: {stats['total_encodings']}")
+            print(f"  Logs: {stats['total_logs']}")
+            input("\nPressione [Enter]...")
+        elif opcao == "5":
+            print("👋 Saindo...")
             break
         else:
-            print("❌ Opção inválida! Tente novamente.")
-
+            print("❌ Opção inválida!")
 
 if __name__ == "__main__":
     menu()
