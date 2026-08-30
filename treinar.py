@@ -1,32 +1,34 @@
 import face_recognition
 import os
-import pickle
 import cv2
 import numpy as np
+from database import FaceDatabase
 
 DATASET_DIR = "dataset"
-ENCODINGS_FILE = "encodings.pickle"
 
 
 def treinar():
+    # 1. Inicializa o banco de dados SQLite
+    db = FaceDatabase()
+
     if not os.path.isdir(DATASET_DIR):
-        print(f"❌ Pasta '{DATASET_DIR}' não encontrada. Cadastre pessoas antes de treinar.")
+        print(f"Erro: Pasta '{DATASET_DIR}' nao encontrada. Cadastre pessoas antes de treinar.")
         return
 
     # Lista e ordena todas as subpastas (pastas de usuários) dentro de dataset
     todas_pessoas = sorted([p for p in os.listdir(DATASET_DIR) if os.path.isdir(os.path.join(DATASET_DIR, p))])
     
     if not todas_pessoas:
-        print("❌ Nenhuma pessoa cadastrada no dataset. Rode o cadastro primeiro.")
+        print("Erro: Nenhuma pessoa cadastrada no dataset. Rode o cadastro primeiro.")
         return
 
     # --- SISTEMA DE SELEÇÃO POR NOME OU ID ---
-    print("\n--- USUÁRIOS ENCONTRADOS NO DATASET ---")
+    print("\n--- USUARIOS ENCONTRADOS NO DATASET ---")
     for idx, pessoa in enumerate(todas_pessoas):
         print(f"[{idx}] {pessoa}")
     print("---------------------------------------")
 
-    entrada = input("\nDigite o NOME da pessoa ou o número do [ID] que deseja treinar (ou 'todos'): ").strip()
+    entrada = input("\nDigite o NOME da pessoa ou o numero do [ID] que deseja treinar (or 'todos'): ").strip()
 
     # Define qual pessoa será processada com base na escolha do usuário
     pessoas_para_treinar = []
@@ -37,7 +39,7 @@ def treinar():
         if 0 <= id_escolhido < len(todas_pessoas):
             pessoas_para_treinar = [todas_pessoas[id_escolhido]]
         else:
-            print("❌ ID inválido.")
+            print("ID invalido.")
             return
     else:
         # Busca por nome (aceita maiúsculas/minúsculas)
@@ -45,44 +47,40 @@ def treinar():
         if match:
             pessoas_para_treinar = match
         else:
-            print(f"❌ Usuário '{entrada}' não foi encontrado.")
+            print(f"Erro: Usuario '{entrada}' nao foi encontrado.")
             return
-
-    # Carrega os encodings antigos para não apagar o treino de outros usuários
-    dados_existentes = {"encodings": [], "names": []}
-    if os.path.exists(ENCODINGS_FILE):
-        try:
-            with open(ENCODINGS_FILE, "rb") as f:
-                dados_existentes = pickle.load(f)
-        except Exception:
-            pass
-
-    encodings_finais = list(dados_existentes["encodings"])
-    nomes_finais = list(dados_existentes["names"])
-
-    # Remove os registros antigos das pessoas selecionadas para evitar dados duplicados
-    for p_treinar in pessoas_para_treinar:
-        indices_para_manter = [i for i, nome in enumerate(nomes_finais) if nome.lower() != p_treinar.lower()]
-        encodings_finais = [encodings_finais[i] for i in indices_para_manter]
-        nomes_finais = [nomes_finais[i] for i in indices_para_manter]
 
     # Carrega o classificador usando o arquivo local que você criou
     xml_local = "haarcascade_frontalface_default.xml"
     if not os.path.exists(xml_local):
-        print(f"❌ Erro: O arquivo '{xml_local}' não está na pasta do projeto.")
+        print(f"Erro: O arquivo '{xml_local}' nao esta na pasta do projeto.")
         return
         
     classificador_rosto = cv2.CascadeClassifier(xml_local)
 
-    # --- PROCESSAMENTO DAS SUBPASTAS ---
+    # --- PROCESSAMENTO DAS SUBPASTAS INTEGRADO AO SQLITE ---
     for nome in pessoas_para_treinar:
         pasta_pessoa = os.path.join(DATASET_DIR, nome)
         arquivos = os.listdir(pasta_pessoa)
         print(f"\nProcessando subpasta '{nome}' ({len(arquivos)} arquivos)...")
 
+        # Verifica se o usuário já existe no SQLite ou cria um novo perfil
+        usuario_existente = db.get_user_by_name(nome)
+        if usuario_existente:
+            # Pega o ID numérico do usuário existente (primeiro elemento da tupla)
+            user_id = usuario_existente[0]
+            # Limpa assinaturas antigas deste usuário específico para evitar duplicidade
+            db.delete_user(nome)
+            user_id = db.add_user(nome)
+        else:
+            user_id = db.add_user(nome)
+            
+        if not user_id:
+            print(f"Erro ao registrar o usuario '{nome}' no banco de dados. Pulando subpasta.")
+            continue
+
         fotos_aproveitadas = 0
         for arquivo in arquivos:
-            # Filtro para aceitar extensões maiúsculas ou minúsculas
             if not arquivo.lower().endswith(('.png', '.jpg', '.jpeg', '.jfif', '.webp')):
                 continue
 
@@ -105,31 +103,22 @@ def treinar():
             for (x, y, w, h) in faces_detectadas:
                 boxes.append((y, x + w, y + h, x))
 
-            # CORREÇÃO CRÍTICA: Converte de BGR para RGB antes de mandar para o face_recognition
+            # Converte de BGR para RGB antes de mandar para o face_recognition
             imagem_rgb = cv2.cvtColor(imagem_bgr, cv2.COLOR_BGR2RGB)
             
             try:
                 encodings = face_recognition.face_encodings(imagem_rgb, boxes)
                 for encoding in encodings:
-                    encodings_finais.append(encoding)
-                    nomes_finais.append(nome)
+                    # SALVAMENTO NO BANCO: Manda a matriz direto para a tabela do SQLite através da sua classe
+                    db.add_encoding(user_id, encoding)
                     fotos_aproveitadas += 1
             except Exception as e:
                 print(f"  [Erro na imagem {arquivo}]: {e}")
                 continue
 
-        print(f"  -> {fotos_aproveitadas} rosto(s) extraído(s) com sucesso para '{nome}'.")
+        print(f"  -> {fotos_aproveitadas} rosto(s) extraido(s) e sincronizado(s) no SQLite para '{nome}'.")
 
-    if not encodings_finais:
-        print("\n❌ Nenhum rosto pôde ser treinado nas pastas selecionadas.")
-        return
-
-    # Grava o arquivo .pickle final atualizado
-    dados_salvar = {"encodings": encodings_finais, "names": nomes_finais}
-    with open(ENCODINGS_FILE, "wb") as f:
-        pickle.dump(dados_salvar, f)
-
-    print(f"\nSucesso! O arquivo '{ENCODINGS_FILE}' foi gerado/atualizado com sucesso.")
+    print("\nProcesso concluido de forma bem-sucedida! Banco de dados atualizado.")
 
 
 if __name__ == "__main__":
