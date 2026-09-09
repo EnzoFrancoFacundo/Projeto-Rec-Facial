@@ -23,7 +23,7 @@ def main():
     
     nome_usuario = input("Digite o Nome da pessoa a ser cadastrada: ").strip()
     if not nome_usuario:
-        print("❌ Nome inválido!")
+        print("Nome inválido!")
         return
     
     usuario_id = normalizar_nome(nome_usuario)
@@ -31,7 +31,7 @@ def main():
     # Verifica se já existe no banco
     usuario_existente = db.get_user_by_name(usuario_id)
     if usuario_existente:
-        print(f"\n❌ Usuário '{usuario_id}' já está cadastrado!")
+        print(f"\n Usuário '{usuario_id}' já está cadastrado!")
         opcao = input("Deseja adicionar mais fotos? (s/n): ").strip().lower()
         if opcao != 's':
             return
@@ -49,7 +49,7 @@ def main():
     else:
         user_id = db.add_user(usuario_id)
         if not user_id:
-            print("❌ Erro ao criar usuário!")
+            print("Erro ao criar usuário!")
             return
     
     # Cria pasta para fotos
@@ -58,7 +58,7 @@ def main():
     
     cap = cv2.VideoCapture(INDEX_CAMERA)
     if not cap.isOpened():
-        print(f"❌ Erro ao abrir a câmera!")
+        print(f" Erro ao abrir a câmera!")
         return
     
     print("\nPressione [ESPAÇO] para começar a capturar (ou 'q' para sair)")
@@ -159,7 +159,7 @@ def main():
 
     cap.release()
     cv2.destroyAllWindows()
-    print(f"\n✅ Cadastro concluído! Dados salvos no SQLite.")
+    print(f"\n Cadastro concluído! Dados salvos no SQLite.")
 
     # Fecha a janela e desliga a câmera imediatamente para liberar processamento
     cap.release()
@@ -199,7 +199,7 @@ def main():
                 encodings_gerados += 1
                 print(f" Mapeado com sucesso: foto {i}/{amostras_coletadas}")
             except Exception as e:
-                print(f"⚠️ Erro ao gerar biometria para a foto {i}: {e}")
+                print(f" Erro ao gerar biometria para a foto {i}: {e}")
         else:
             # Se o recorte ficou muito próximo e o 'hog' falhou, tenta extrair de forma direta da imagem
             try:
