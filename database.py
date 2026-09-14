@@ -46,9 +46,6 @@ class FaceDatabase:
             )
         ''')
         
-        conn.commit()
-        conn.close()
-        print("✅ Banco de dados SQLite inicializado!")
     
     def add_user(self, name):
         conn = self.get_connection()

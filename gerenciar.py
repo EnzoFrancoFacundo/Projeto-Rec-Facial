@@ -5,40 +5,17 @@ from database import FaceDatabase
 DATASET_DIR = "dataset"
 
 
-def listar_cadastros(db):
-    users = db.get_all_users()
-    if not users:
-        print("\nNenhum usuario cadastrado!")
-        input("\nPressione [Enter] para continuar...")
-        return
-
-    print("\nUSUARIOS CADASTRADOS NO SQLITE:")
-    print("-" * 45)
-    for user in users:
-        user_id, name = user[0], user[1]
-        
-        caminho_pasta = os.path.join(DATASET_DIR, name)
-        info_fotos = ""
-        if os.path.exists(caminho_pasta):
-            num_fotos = len(os.listdir(caminho_pasta))
-            info_fotos = f" ({num_fotos} fotos em disco)"
-
-        print(f"  [ID: {user_id}] {name}{info_fotos}")
-    print("-" * 45)
-    input("\nPressione [Enter] para continuar...")
-
-
 def editar_nome(db):
     users = db.get_all_users()
     if not users:
         print("\nNenhum usuario cadastrado!")
         return
 
-    print("\nSELECIONE O USUARIO PARA RENOMEAR:")
+    print("\nSELECIONE O USUÁRIO PARA RENOMEAR:")
     for user in users:
         u_id = user[0] if isinstance(user, (tuple, list)) else user.get('id')
         u_nome = user[1] if isinstance(user, (tuple, list)) else user.get('nome')
-        print(f"  [ID: {u_id}] {u_nome}")
+        print(f"   [ID: {u_id}] {u_nome}")
 
     try:
         user_id = int(input("\nDigite o ID do usuario: "))
@@ -46,8 +23,8 @@ def editar_nome(db):
         print("ID invalido!")
         return
 
-    # Busca diretamente na lista em memoria para nao depender de db.get_user_by_id
-    user = next((u for u in users if u[0] == user_id), None)
+    # Busca o usuário pelo ID selecionado
+    user = next((u for u in users if (u[0] if isinstance(u, (tuple, list)) else u.get('id')) == user_id), None)
 
     if not user:
         print("Usuario nao encontrado!")
@@ -55,13 +32,18 @@ def editar_nome(db):
 
     old_name = user[1] if isinstance(user, (tuple, list)) else user.get('nome')
 
-    novo_nome = input(f"Digite o NOVO nome para '{old_name}': ").strip()
+    entrada = input(f"Digite o NOVO nome para '{old_name}': ").strip()
+    novo_nome = "_".join(entrada.lower().split())
 
     if not novo_nome:
         print("O nome nao pode ser vazio!")
         return
 
-    if db.update_user_name(old_name, novo_nome):
+    # ATENÇÃO: Passe o user_id (ou garanta que seu método no DB atualize corretamente por ID/nome)
+    # Se seu db.update_user_name aceitar (user_id, novo_nome), prefira usar user_id.
+    if db.update_user_name(user_id, novo_nome) if hasattr(db, 'update_user_name') else db.update_user_name(old_name, novo_nome):
+        
+        # Renomeia a pasta do dataset caso ela exista
         old_path = os.path.join(DATASET_DIR, old_name)
         new_path = os.path.join(DATASET_DIR, novo_nome)
 
@@ -73,6 +55,34 @@ def editar_nome(db):
     else:
         print("Erro ao renomear no banco de dados.")
 
+
+def listar_cadastros(db):
+    users = db.get_all_users()
+    if not users:
+        print("\nNenhum usuario cadastrado!")
+        input("\nPressione [Enter] para continuar...")
+        return
+
+    print("\nUSUÁRIOS CADASTRADOS NO SQLITE:")
+    print("-" * 45)
+    for user in users:
+        user_id = user[0] if isinstance(user, (tuple, list)) else user.get('id')
+        raw_name = user[1] if isinstance(user, (tuple, list)) else user.get('nome')
+        
+        # Exibe o nome que está gravado atualmente no banco
+        name = str(raw_name) if raw_name else "sem_nome"
+        
+        caminho_pasta = os.path.join(DATASET_DIR, name)
+        info_fotos = ""
+        
+        if os.path.exists(caminho_pasta):
+            num_fotos = len(os.listdir(caminho_pasta))
+            info_fotos = f" ({num_fotos} fotos em disco)"
+
+        print(f"   [ID: {user_id}] {name}{info_fotos}")
+        
+    print("-" * 45)
+    input("\nPressione [Enter] para continuar...")
 
 def apagar_cadastro(db):
     users = db.get_all_users()
