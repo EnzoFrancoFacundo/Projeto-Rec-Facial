@@ -45,7 +45,7 @@ def init_db():
 init_db()
 
 # -----------------------------------------------------------------------------
-# AUXILIARES DE IMAGEM E NOME
+# AUXILIARES
 # -----------------------------------------------------------------------------
 def normalizar_nome(nome):
     nome_limpo = unicodedata.normalize('NFKD', nome).encode('ASCII', 'ignore').decode('ASCII')
@@ -93,18 +93,15 @@ def cadastrar():
     frame = base64_to_cv2(img_b64)
     rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
     
-    # Extrai o encoding da imagem
     boxes = face_recognition.face_locations(rgb, model="hog")
     encodings = face_recognition.face_encodings(rgb, boxes)
 
     if not encodings:
         return jsonify({"mensagem": "❌ Nenhuma face foi detectada na foto!"}), 400
 
-    # Salva a imagem no disco
     caminho_foto = os.path.join(pasta_destino, "1.jpg")
     cv2.imwrite(caminho_foto, frame)
 
-    # Carrega/Atualiza o arquivo encodings.pickle
     dados = {"encodings": [], "names": []}
     if os.path.exists(ENCODINGS_FILE):
         with open(ENCODINGS_FILE, "rb") as f:
@@ -116,7 +113,6 @@ def cadastrar():
     with open(ENCODINGS_FILE, "wb") as f:
         pickle.dump(dados, f)
 
-    # Registra no SQLite
     conn = sqlite3.connect(DB_FILE)
     cursor = conn.cursor()
     cursor.execute("INSERT OR REPLACE INTO usuarios (nome, pasta) VALUES (?, ?)", (usuario_id, pasta_destino))
@@ -155,7 +151,6 @@ def reconhecer():
                 nome = nomes_conhecidos[melhor_indice]
                 cor = (0, 255, 0)
                 
-                # Registra o acesso no banco de dados
                 conn = sqlite3.connect(DB_FILE)
                 cursor = conn.cursor()
                 cursor.execute("INSERT INTO acessos (nome) VALUES (?)", (nome,))
@@ -171,14 +166,12 @@ def reconhecer():
 def deletar():
     nome = request.json.get('nome')
     
-    # 1. Remove do SQLite
     conn = sqlite3.connect(DB_FILE)
     cursor = conn.cursor()
     cursor.execute("DELETE FROM usuarios WHERE nome = ?", (nome,))
     conn.commit()
     conn.close()
 
-    # 2. Atualiza Pickle
     if os.path.exists(ENCODINGS_FILE):
         with open(ENCODINGS_FILE, "rb") as f:
             dados = pickle.load(f)
@@ -192,6 +185,82 @@ def deletar():
             pickle.dump(dados_atualizados, f)
 
     return jsonify({"status": "sucesso"})
+
+@app.route('/api/renomear', methods=['POST'])
+def renomear():
+    data = request.json
+    nome_antigo = normalizar_nome(data.get('nome_antigo'))
+    novo_nome = normalizar_nome(data.get('novo_nome'))
+
+    if not novo_nome:
+        return jsonify({"mensagem": "❌ Novo nome inválido!"}), 400
+
+    caminho_antigo = os.path.join(DATASET_DIR, nome_antigo)
+    caminho_novo = os.path.join(DATASET_DIR, novo_nome)
+
+    if os.path.exists(caminho_novo):
+        return jsonify({"mensagem": f"❌ Já existe um cadastro com o nome '{novo_nome}'!"}), 400
+
+    if os.path.exists(caminho_antigo):
+        os.rename(caminho_antigo, caminho_novo)
+
+    conn = sqlite3.connect(DB_FILE)
+    cursor = conn.cursor()
+    cursor.execute("UPDATE usuarios SET nome = ?, pasta = ? WHERE nome = ?", (novo_nome, caminho_novo, nome_antigo))
+    cursor.execute("UPDATE acessos SET nome = ? WHERE nome = ?", (novo_nome, nome_antigo))
+    conn.commit()
+    conn.close()
+
+    if os.path.exists(ENCODINGS_FILE):
+        with open(ENCODINGS_FILE, "rb") as f:
+            dados = pickle.load(f)
+
+        novos_nomes = [novo_nome if n.lower() == nome_antigo.lower() else n for n in dados["names"]]
+        dados_atualizados = {
+            "encodings": dados["encodings"],
+            "names": novos_nomes
+        }
+        with open(ENCODINGS_FILE, "wb") as f:
+            pickle.dump(dados_atualizados, f)
+
+    return jsonify({"mensagem": f" Sucesso! '{nome_antigo}' foi alterado para '{novo_nome}'."})
+
+@app.route('/api/adicionar_foto', methods=['POST'])
+def adicionar_foto():
+    data = request.json
+    nome = normalizar_nome(data.get('nome'))
+    img_b64 = data.get('image')
+
+    pasta_destino = os.path.join(DATASET_DIR, nome)
+    if not os.path.exists(pasta_destino):
+        os.makedirs(pasta_destino, exist_ok=True)
+
+    frame = base64_to_cv2(img_b64)
+    rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+
+    boxes = face_recognition.face_locations(rgb, model="hog")
+    encodings = face_recognition.face_encodings(rgb, boxes)
+
+    if not encodings:
+        return jsonify({"mensagem": "❌ Nenhuma face foi detectada na nova foto!"}), 400
+
+    fotos_existentes = len(os.listdir(pasta_destino))
+    proximo_numero = fotos_existentes + 1
+    caminho_foto = os.path.join(pasta_destino, f"{proximo_numero}.jpg")
+    cv2.imwrite(caminho_foto, frame)
+
+    dados = {"encodings": [], "names": []}
+    if os.path.exists(ENCODINGS_FILE):
+        with open(ENCODINGS_FILE, "rb") as f:
+            dados = pickle.load(f)
+
+    dados["encodings"].append(encodings[0])
+    dados["names"].append(nome)
+
+    with open(ENCODINGS_FILE, "wb") as f:
+        pickle.dump(dados, f)
+
+    return jsonify({"mensagem": f" Nova foto adicionada com sucesso para '{nome}' (Foto #{proximo_numero})!"})
 
 if __name__ == '__main__':
     app.run(debug=True, port=5000)
