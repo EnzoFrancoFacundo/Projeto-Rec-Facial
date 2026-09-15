@@ -1,6 +1,5 @@
 import os
 import cv2
-import pickle
 import base64
 import sqlite3
 import re
@@ -13,14 +12,14 @@ app = Flask(__name__)
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DATASET_DIR = os.path.join(BASE_DIR, "dataset")
-ENCODINGS_FILE = os.path.join(BASE_DIR, "encodings.pickle")
-DB_FILE = os.path.join(BASE_DIR, "banco.db")
+DB_FILE = os.path.join(BASE_DIR, "faces.db")
+MINIMO_FOTOS_REQUERIDO = 50
 TOLERANCIA = 0.5
 
 os.makedirs(DATASET_DIR, exist_ok=True)
 
 # -----------------------------------------------------------------------------
-# BANCO DE DADOS (SQLite)
+# BANCO DE DADOS (SQLite - faces.db)
 # -----------------------------------------------------------------------------
 def init_db():
     conn = sqlite3.connect(DB_FILE)
@@ -30,6 +29,14 @@ def init_db():
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             nome TEXT UNIQUE NOT NULL,
             pasta TEXT NOT NULL
+        )
+    """)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS encodings (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            nome TEXT NOT NULL,
+            encoding BLOB NOT NULL,
+            caminho_foto TEXT NOT NULL
         )
     """)
     cursor.execute("""
@@ -48,7 +55,9 @@ init_db()
 # AUXILIARES
 # -----------------------------------------------------------------------------
 def normalizar_nome(nome):
-    nome_limpo = unicodedata.normalize('NFKD', nome).encode('ASCII', 'ignore').decode('ASCII')
+    if not nome:
+        return ""
+    nome_limpo = unicodedata.normalize('NFKD', str(nome)).encode('ASCII', 'ignore').decode('ASCII')
     nome_limpo = nome_limpo.lower().strip().replace(" ", "_")
     return re.sub(r'[^a-z0-9_]', '', nome_limpo)
 
@@ -62,6 +71,28 @@ def cv2_to_base64(img):
     b64 = base64.b64encode(buffer).decode('utf-8')
     return f"data:image/jpeg;base64,{b64}"
 
+def desenhar_marcador_opencv(frame, boxes, rotulo="Rosto Capturado"):
+    img = frame.copy()
+    for (top, right, bottom, left) in boxes:
+        cv2.rectangle(img, (left, top), (right, bottom), (0, 255, 0), 2)
+        cv2.putText(img, rotulo, (left, top - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
+    return img
+
+def carregar_encodings_do_banco():
+    conn = sqlite3.connect(DB_FILE)
+    cursor = conn.cursor()
+    cursor.execute("SELECT nome, encoding FROM encodings")
+    rows = cursor.fetchall()
+    conn.close()
+
+    nomes = []
+    encodings = []
+    for nome, raw_enc in rows:
+        vec = np.frombuffer(raw_enc, dtype=np.float64)
+        nomes.append(nome)
+        encodings.append(vec)
+    return nomes, encodings
+
 # -----------------------------------------------------------------------------
 # ROTAS E API
 # -----------------------------------------------------------------------------
@@ -74,7 +105,14 @@ def obter_dados():
     conn = sqlite3.connect(DB_FILE)
     cursor = conn.cursor()
     cursor.execute("SELECT id, nome, pasta FROM usuarios")
-    usuarios = cursor.fetchall()
+    usuarios_db = cursor.fetchall()
+    
+    usuarios = []
+    for u in usuarios_db:
+        cursor.execute("SELECT COUNT(*) FROM encodings WHERE nome = ?", (u[1],))
+        qtd_fotos = cursor.fetchone()[0]
+        usuarios.append([u[0], u[1], u[2], qtd_fotos])
+
     cursor.execute("SELECT id, nome, datetime(data_hora, 'localtime') FROM acessos ORDER BY id DESC LIMIT 10")
     acessos = cursor.fetchall()
     conn.close()
@@ -87,6 +125,9 @@ def cadastrar():
     img_b64 = data.get('image')
 
     usuario_id = normalizar_nome(nome_raw)
+    if not usuario_id:
+        return jsonify({"mensagem": "❌ Nome inválido!"}), 400
+
     pasta_destino = os.path.join(DATASET_DIR, usuario_id)
     os.makedirs(pasta_destino, exist_ok=True)
 
@@ -99,41 +140,87 @@ def cadastrar():
     if not encodings:
         return jsonify({"mensagem": "❌ Nenhuma face foi detectada na foto!"}), 400
 
-    caminho_foto = os.path.join(pasta_destino, "1.jpg")
-    cv2.imwrite(caminho_foto, frame)
-
-    dados = {"encodings": [], "names": []}
-    if os.path.exists(ENCODINGS_FILE):
-        with open(ENCODINGS_FILE, "rb") as f:
-            dados = pickle.load(f)
-
-    dados["encodings"].append(encodings[0])
-    dados["names"].append(usuario_id)
-
-    with open(ENCODINGS_FILE, "wb") as f:
-        pickle.dump(dados, f)
-
     conn = sqlite3.connect(DB_FILE)
     cursor = conn.cursor()
+
+    cursor.execute("SELECT COUNT(*) FROM encodings WHERE nome = ?", (usuario_id,))
+    total_atual = cursor.fetchone()[0]
+    proximo_num = total_atual + 1
+
+    caminho_foto = os.path.join(pasta_destino, f"{proximo_num}.jpg")
+    cv2.imwrite(caminho_foto, frame)
+
+    blob_encoding = encodings[0].tobytes()
     cursor.execute("INSERT OR REPLACE INTO usuarios (nome, pasta) VALUES (?, ?)", (usuario_id, pasta_destino))
+    cursor.execute("INSERT INTO encodings (nome, encoding, caminho_foto) VALUES (?, ?, ?)", 
+                   (usuario_id, blob_encoding, caminho_foto))
+    
     conn.commit()
     conn.close()
 
-    return jsonify({"mensagem": f" Cadastrado com sucesso como '{usuario_id}'!"})
+    frame_marcado = desenhar_marcador_opencv(frame, boxes, f"{usuario_id} #{proximo_num}")
+    preview_b64 = cv2_to_base64(frame_marcado)
+
+    status_min = f"({proximo_num}/{MINIMO_FOTOS_REQUERIDO} fotos necessárias)"
+    return jsonify({
+        "mensagem": f" Foto registrada em faces.db {status_min}",
+        "preview": preview_b64
+    })
+
+@app.route('/api/adicionar_foto', methods=['POST'])
+def adicionar_foto():
+    data = request.json
+    nome = normalizar_nome(data.get('nome'))
+    img_b64 = data.get('image')
+
+    if not nome:
+        return jsonify({"mensagem": "❌ Nome não fornecido!"}), 400
+
+    pasta_destino = os.path.join(DATASET_DIR, nome)
+    os.makedirs(pasta_destino, exist_ok=True)
+
+    frame = base64_to_cv2(img_b64)
+    rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+
+    boxes = face_recognition.face_locations(rgb, model="hog")
+    encodings = face_recognition.face_encodings(rgb, boxes)
+
+    if not encodings:
+        return jsonify({"mensagem": "❌ Nenhuma face detectada na captura!"}), 400
+
+    conn = sqlite3.connect(DB_FILE)
+    cursor = conn.cursor()
+
+    cursor.execute("SELECT COUNT(*) FROM encodings WHERE nome = ?", (nome,))
+    total_atual = cursor.fetchone()[0]
+    proximo_num = total_atual + 1
+
+    caminho_foto = os.path.join(pasta_destino, f"{proximo_num}.jpg")
+    cv2.imwrite(caminho_foto, frame)
+
+    blob_encoding = encodings[0].tobytes()
+    cursor.execute("INSERT INTO encodings (nome, encoding, caminho_foto) VALUES (?, ?, ?)", 
+                   (nome, blob_encoding, caminho_foto))
+    conn.commit()
+    conn.close()
+
+    frame_marcado = desenhar_marcador_opencv(frame, boxes, f"{nome} #{proximo_num}")
+    preview_b64 = cv2_to_base64(frame_marcado)
+
+    return jsonify({
+        "mensagem": f" Foto #{proximo_num} salva no faces.db para '{nome}'!",
+        "preview": preview_b64
+    })
 
 @app.route('/api/reconhecer', methods=['POST'])
 def reconhecer():
     data = request.json
     frame = base64_to_cv2(data.get('image'))
     
-    if not os.path.exists(ENCODINGS_FILE):
+    nomes_conhecidos, encodings_conhecidos = carregar_encodings_do_banco()
+
+    if not encodings_conhecidos:
         return jsonify({"image": cv2_to_base64(frame)})
-
-    with open(ENCODINGS_FILE, "rb") as f:
-        dados_conhecidos = pickle.load(f)
-
-    encodings_conhecidos = dados_conhecidos["encodings"]
-    nomes_conhecidos = dados_conhecidos["names"]
 
     rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
     boxes = face_recognition.face_locations(rgb, model="hog")
@@ -143,48 +230,23 @@ def reconhecer():
         nome = "Desconhecido"
         cor = (0, 0, 255)
 
-        if encodings_conhecidos:
-            distancias = face_recognition.face_distance(encodings_conhecidos, encoding_atual)
-            melhor_indice = int(np.argmin(distancias))
+        distancias = face_recognition.face_distance(encodings_conhecidos, encoding_atual)
+        melhor_indice = int(np.argmin(distancias))
+        
+        if distancias[melhor_indice] <= TOLERANCIA:
+            nome = nomes_conhecidos[melhor_indice]
+            cor = (0, 255, 0)
             
-            if distancias[melhor_indice] <= TOLERANCIA:
-                nome = nomes_conhecidos[melhor_indice]
-                cor = (0, 255, 0)
-                
-                conn = sqlite3.connect(DB_FILE)
-                cursor = conn.cursor()
-                cursor.execute("INSERT INTO acessos (nome) VALUES (?)", (nome,))
-                conn.commit()
-                conn.close()
+            conn = sqlite3.connect(DB_FILE)
+            cursor = conn.cursor()
+            cursor.execute("INSERT INTO acessos (nome) VALUES (?)", (nome,))
+            conn.commit()
+            conn.close()
 
         cv2.rectangle(frame, (left, top), (right, bottom), cor, 2)
         cv2.putText(frame, nome, (left, top - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.6, cor, 2)
 
     return jsonify({"image": cv2_to_base64(frame)})
-
-@app.route('/api/deletar', methods=['POST'])
-def deletar():
-    nome = request.json.get('nome')
-    
-    conn = sqlite3.connect(DB_FILE)
-    cursor = conn.cursor()
-    cursor.execute("DELETE FROM usuarios WHERE nome = ?", (nome,))
-    conn.commit()
-    conn.close()
-
-    if os.path.exists(ENCODINGS_FILE):
-        with open(ENCODINGS_FILE, "rb") as f:
-            dados = pickle.load(f)
-
-        indices = [i for i, n in enumerate(dados["names"]) if n.lower() != nome.lower()]
-        dados_atualizados = {
-            "encodings": [dados["encodings"][i] for i in indices],
-            "names": [dados["names"][i] for i in indices]
-        }
-        with open(ENCODINGS_FILE, "wb") as f:
-            pickle.dump(dados_atualizados, f)
-
-    return jsonify({"status": "sucesso"})
 
 @app.route('/api/renomear', methods=['POST'])
 def renomear():
@@ -192,14 +254,14 @@ def renomear():
     nome_antigo = normalizar_nome(data.get('nome_antigo'))
     novo_nome = normalizar_nome(data.get('novo_nome'))
 
-    if not novo_nome:
-        return jsonify({"mensagem": "❌ Novo nome inválido!"}), 400
+    if not novo_nome or not nome_antigo:
+        return jsonify({"mensagem": "❌ Nomes inválidos fornecidos!"}), 400
 
     caminho_antigo = os.path.join(DATASET_DIR, nome_antigo)
     caminho_novo = os.path.join(DATASET_DIR, novo_nome)
 
-    if os.path.exists(caminho_novo):
-        return jsonify({"mensagem": f"❌ Já existe um cadastro com o nome '{novo_nome}'!"}), 400
+    if os.path.exists(caminho_novo) and nome_antigo != novo_nome:
+        return jsonify({"mensagem": f"❌ Já existe cadastro para '{novo_nome}'!"}), 400
 
     if os.path.exists(caminho_antigo):
         os.rename(caminho_antigo, caminho_novo)
@@ -207,60 +269,26 @@ def renomear():
     conn = sqlite3.connect(DB_FILE)
     cursor = conn.cursor()
     cursor.execute("UPDATE usuarios SET nome = ?, pasta = ? WHERE nome = ?", (novo_nome, caminho_novo, nome_antigo))
+    cursor.execute("UPDATE encodings SET nome = ? WHERE nome = ?", (novo_nome, nome_antigo))
     cursor.execute("UPDATE acessos SET nome = ? WHERE nome = ?", (novo_nome, nome_antigo))
     conn.commit()
     conn.close()
 
-    if os.path.exists(ENCODINGS_FILE):
-        with open(ENCODINGS_FILE, "rb") as f:
-            dados = pickle.load(f)
+    return jsonify({"mensagem": f" Nome alterado de '{nome_antigo}' para '{novo_nome}' no faces.db."})
 
-        novos_nomes = [novo_nome if n.lower() == nome_antigo.lower() else n for n in dados["names"]]
-        dados_atualizados = {
-            "encodings": dados["encodings"],
-            "names": novos_nomes
-        }
-        with open(ENCODINGS_FILE, "wb") as f:
-            pickle.dump(dados_atualizados, f)
+@app.route('/api/deletar', methods=['POST'])
+def deletar():
+    nome = normalizar_nome(request.json.get('nome'))
+    
+    conn = sqlite3.connect(DB_FILE)
+    cursor = conn.cursor()
+    cursor.execute("DELETE FROM usuarios WHERE nome = ?", (nome,))
+    cursor.execute("DELETE FROM encodings WHERE nome = ?", (nome,))
+    cursor.execute("DELETE FROM acessos WHERE nome = ?", (nome,))
+    conn.commit()
+    conn.close()
 
-    return jsonify({"mensagem": f" Sucesso! '{nome_antigo}' foi alterado para '{novo_nome}'."})
-
-@app.route('/api/adicionar_foto', methods=['POST'])
-def adicionar_foto():
-    data = request.json
-    nome = normalizar_nome(data.get('nome'))
-    img_b64 = data.get('image')
-
-    pasta_destino = os.path.join(DATASET_DIR, nome)
-    if not os.path.exists(pasta_destino):
-        os.makedirs(pasta_destino, exist_ok=True)
-
-    frame = base64_to_cv2(img_b64)
-    rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-
-    boxes = face_recognition.face_locations(rgb, model="hog")
-    encodings = face_recognition.face_encodings(rgb, boxes)
-
-    if not encodings:
-        return jsonify({"mensagem": "❌ Nenhuma face foi detectada na nova foto!"}), 400
-
-    fotos_existentes = len(os.listdir(pasta_destino))
-    proximo_numero = fotos_existentes + 1
-    caminho_foto = os.path.join(pasta_destino, f"{proximo_numero}.jpg")
-    cv2.imwrite(caminho_foto, frame)
-
-    dados = {"encodings": [], "names": []}
-    if os.path.exists(ENCODINGS_FILE):
-        with open(ENCODINGS_FILE, "rb") as f:
-            dados = pickle.load(f)
-
-    dados["encodings"].append(encodings[0])
-    dados["names"].append(nome)
-
-    with open(ENCODINGS_FILE, "wb") as f:
-        pickle.dump(dados, f)
-
-    return jsonify({"mensagem": f" Nova foto adicionada com sucesso para '{nome}' (Foto #{proximo_numero})!"})
+    return jsonify({"status": "sucesso"})
 
 if __name__ == '__main__':
     app.run(debug=True, port=5000)
