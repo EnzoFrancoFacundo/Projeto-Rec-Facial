@@ -26,8 +26,21 @@
         .card p { color: #64748b; font-size: 0.9rem; }
 
         /* Componentes da Camera */
-        .camera-container { display: flex; gap: 20px; background: #fff; padding: 20px; border-radius: 8px; }
+        .camera-container { position: relative; display: flex; gap: 20px; background: #fff; padding: 20px; border-radius: 8px; overflow: hidden; }
         video, canvas, img { border-radius: 8px; border: 1px solid #cbd5e1; background: #000; width: 480px; height: 360px; object-fit: cover; }
+
+        /* Flash de Captura */
+        .flash-effect {
+            animation: flash 0.3s ease-out;
+        }
+        @keyframes flash {
+            0% { opacity: 1; background-color: white; }
+            100% { opacity: 0; }
+        }
+        .flash-overlay {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            background: white; opacity: 0; pointer-events: none; z-index: 10;
+        }
 
         /* Formulario e Tabelas */
         .form-group { margin-bottom: 15px; }
@@ -39,6 +52,10 @@
         table { width: 100%; border-collapse: collapse; background: #fff; margin-top: 15px; border-radius: 8px; overflow: hidden; }
         th, td { padding: 12px; text-align: left; border-bottom: 1px solid #e2e8f0; }
         th { background-color: #f8fafc; }
+
+        .badge-fotos {
+            background-color: #e0f2fe; color: #0369a1; padding: 4px 8px; border-radius: 12px; font-size: 0.85rem; font-weight: bold; display: inline-block; margin-top: 5px;
+        }
     </style>
 </head>
 <body>
@@ -86,6 +103,7 @@
                 <input type="text" id="nome-cadastro" placeholder="Ex: João Silva">
             </div>
             <div class="camera-container">
+                <div id="flash-cad" class="flash-overlay"></div>
                 <video id="video-cad" autoplay muted></video>
             </div>
             <br>
@@ -120,9 +138,11 @@
                         <h4>Adicionar Nova Foto ao Cadastro</h4>
                         <div class="form-group">
                             <label>Selecione o Usuário:</label>
-                            <select id="select-add-foto"></select>
+                            <select id="select-add-foto" onchange="atualizarContadorFotos()"></select>
+                            <div id="badge-contador" class="badge-fotos">Fotos cadastradas: 0</div>
                         </div>
                         <div class="camera-container" style="height: 200px; width: 100%;">
+                            <div id="flash-add" class="flash-overlay"></div>
                             <video id="video-add-foto" autoplay muted style="width: 100%; height: 100%;"></video>
                         </div>
                         <br>
@@ -137,6 +157,7 @@
                     <tr>
                         <th>ID</th>
                         <th>Nome</th>
+                        <th>Fotos Salvas</th>
                         <th>Caminho Dataset</th>
                         <th>Ações</th>
                     </tr>
@@ -149,6 +170,14 @@
     <script>
         let streamRec = null;
         let intervalRec = null;
+        let listaUsuariosGlobal = [];
+
+        function dispararFlash(elementId) {
+            const flash = document.getElementById(elementId);
+            flash.classList.remove('flash-effect');
+            void flash.offsetWidth;
+            flash.classList.add('flash-effect');
+        }
 
         function showSection(id) {
             document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
@@ -162,6 +191,7 @@
         async function carregarDados() {
             const res = await fetch('/api/dados');
             const data = await res.json();
+            listaUsuariosGlobal = data.usuarios;
             
             document.getElementById('stat-usuarios').innerText = data.usuarios.length;
             document.getElementById('stat-acessos').innerText = data.acessos.length;
@@ -173,7 +203,7 @@
             // Tabela Usuarios
             const tbodyUsuarios = document.getElementById('tbl-usuarios');
             tbodyUsuarios.innerHTML = data.usuarios.map(u => 
-                `<tr><td>${u[0]}</td><td>${u[1]}</td><td>${u[2]}</td>
+                `<tr><td>${u[0]}</td><td>${u[1]}</td><td>${u[3]} foto(s)</td><td>${u[2]}</td>
                 <td><button class="btn btn-danger" onclick="deletarUsuario('${u[1]}')">Excluir</button></td></tr>`
             ).join('');
 
@@ -181,6 +211,15 @@
             const optionsHtml = data.usuarios.map(u => `<option value="${u[1]}">${u[1]}</option>`).join('');
             document.getElementById('select-renomear').innerHTML = optionsHtml;
             document.getElementById('select-add-foto').innerHTML = optionsHtml;
+
+            atualizarContadorFotos();
+        }
+
+        function atualizarContadorFotos() {
+            const sel = document.getElementById('select-add-foto').value;
+            const usr = listaUsuariosGlobal.find(u => u[1] === sel);
+            const qtd = usr ? usr[3] : 0;
+            document.getElementById('badge-contador').innerText = `Fotos cadastradas: ${qtd}`;
         }
 
         // Reconhecimento
@@ -223,6 +262,8 @@
         async function capturarECadastrar() {
             const nome = document.getElementById('nome-cadastro').value;
             if (!nome) return alert('Insira um nome!');
+
+            dispararFlash('flash-cad');
 
             const video = document.getElementById('video-cad');
             const canvas = document.createElement('canvas');
@@ -270,8 +311,11 @@
 
         async function adicionarFotoUsuario() {
             const nome = document.getElementById('select-add-foto').value;
-            const video = document.getElementById('video-add-foto');
+            if (!nome) return alert("Selecione um usuário!");
 
+            dispararFlash('flash-add');
+
+            const video = document.getElementById('video-add-foto');
             const canvas = document.createElement('canvas');
             canvas.width = video.videoWidth;
             canvas.height = video.videoHeight;
