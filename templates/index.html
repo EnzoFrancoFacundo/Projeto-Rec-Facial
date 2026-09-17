@@ -1,0 +1,567 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Painel Facial</title>
+    <link rel="shortcut icon" href="{{ url_for('static', filename='logo.ico') }}" type="image/x-icon">
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+        body { display: flex; height: 100vh; background-color: #f8fafc; color: #1e293b; }
+        
+        /* Sidebar */
+        .sidebar { width: 250px; background-color: #0f172a; color: #fff; padding: 24px 16px; display: flex; flex-direction: column; gap: 16px; border-right: 1px solid #1e293b; }
+        .sidebar h2 { font-size: 1.1rem; border-bottom: 1px solid #334155; padding-bottom: 12px; color: #38bdf8; text-transform: uppercase; letter-spacing: 0.05em; }
+        .sidebar button { background: transparent; border: none; color: #94a3b8; padding: 12px 16px; text-align: left; font-size: 0.95rem; font-weight: 500; cursor: pointer; border-radius: 6px; width: 100%; transition: all 0.2s ease; }
+        .sidebar button.active, .sidebar button:hover { background-color: #1e293b; color: #38bdf8; transform: translateX(3px); }
+
+        /* Area de Conteudo */
+        .content { flex: 1; padding: 32px; overflow-y: auto; }
+        
+        /* Transicao suave de Secoes */
+        .section { display: none; opacity: 0; transform: translateY(8px); transition: opacity 0.3s ease, transform 0.3s ease; }
+        .section.active { display: block; opacity: 1; transform: translateY(0); }
+
+        /* Cards do Dashboard */
+        .cards { display: flex; gap: 20px; margin-bottom: 30px; }
+        .card { flex: 1; background: #fff; padding: 24px; border-radius: 12px; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05); text-align: center; border: 1px solid #e2e8f0; transition: transform 0.2s ease, box-shadow 0.2s ease; }
+        .card:hover { transform: translateY(-2px); box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.08); }
+        .card h3 { font-size: 2.2rem; color: #2563eb; font-weight: 700; margin-bottom: 4px; }
+        .card p { color: #64748b; font-size: 0.875rem; text-transform: uppercase; letter-spacing: 0.025em; font-weight: 600; }
+
+        /* Containers de Camera */
+        .camera-container { position: relative; display: flex; gap: 20px; background: #fff; padding: 20px; border-radius: 12px; border: 1px solid #e2e8f0; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05); }
+        video, canvas, img { border-radius: 8px; border: 1px solid #cbd5e1; background: #0f172a; width: 440px; height: 330px; object-fit: cover; transition: border-color 0.2s; }
+
+        /* Efeito Flash */
+        .flash-effect { animation: flash 0.2s ease-out; }
+        @keyframes flash { 0% { opacity: 1; background-color: white; } 100% { opacity: 0; } }
+        .flash-overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: white; opacity: 0; pointer-events: none; z-index: 10; border-radius: 12px; }
+
+        /* Formularios e Botoes */
+        .form-group { margin-bottom: 15px; }
+        .form-group label { display: block; margin-bottom: 6px; font-weight: 600; font-size: 0.875rem; color: #334155; }
+        .form-group input, .form-group select { width: 100%; padding: 10px 12px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 0.95rem; outline: none; transition: border-color 0.2s; }
+        .form-group input:focus, .form-group select:focus { border-color: #2563eb; }
+        
+        .btn { padding: 10px 18px; background-color: #2563eb; color: #fff; border: none; border-radius: 6px; cursor: pointer; font-weight: 600; font-size: 0.9rem; margin-right: 8px; transition: background-color 0.2s, transform 0.1s; }
+        .btn:hover { background-color: #1d4ed8; }
+        .btn:active { transform: scale(0.98); }
+        .btn-danger { background-color: #dc2626; }
+        .btn-danger:hover { background-color: #b91c1c; }
+        .btn-warning { background-color: #d97706; }
+        .btn-warning:hover { background-color: #b45309; }
+        .btn:disabled { background-color: #94a3b8; cursor: not-allowed; opacity: 0.6; transform: none; }
+
+        /* Barra de Progresso Animada */
+        .progress-bar-container { width: 100%; background-color: #e2e8f0; border-radius: 10px; height: 20px; margin-top: 15px; overflow: hidden; }
+        .progress-bar { height: 100%; background: linear-gradient(90deg, #16a34a, #22c55e); width: 0%; transition: width 0.3s ease; text-align: center; color: white; font-size: 0.8rem; line-height: 20px; font-weight: bold; }
+        
+        /* Tabelas */
+        table { width: 100%; border-collapse: collapse; background: #fff; margin-top: 15px; border-radius: 8px; overflow: hidden; border: 1px solid #e2e8f0; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }
+        th, td { padding: 12px 16px; text-align: left; border-bottom: 1px solid #f1f5f9; font-size: 0.9rem; }
+        th { background-color: #f8fafc; font-weight: 600; color: #475569; }
+        tr:hover { background-color: #f8fafc; }
+
+        /* Badges de Status */
+        .badge-fotos { background-color: #e0f2fe; color: #0369a1; padding: 4px 10px; border-radius: 12px; font-size: 0.8rem; font-weight: 600; display: inline-block; margin-top: 2px; }
+        .badge-alerta { background-color: #fef2f2; color: #dc2626; }
+        .badge-ok { background-color: #f0fdf4; color: #16a34a; }
+
+        /* Indicador de status de conexao (novo, discreto, nao altera o layout) */
+        .status-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; background-color: #94a3b8; transition: background-color 0.2s ease; }
+        .status-dot.on { background-color: #22c55e; }
+        .status-dot.off { background-color: #dc2626; }
+    </style>
+</head>
+<body>
+
+    <div class="sidebar">
+        <h2>Painel Facial</h2>
+        <button class="active" onclick="showSection('dashboard')">Dashboard</button>
+        <button onclick="showSection('reconhecimento')">Reconhecimento</button>
+        <button onclick="showSection('cadastrar')">Cadastrar Rosto</button>
+        <button onclick="showSection('gerenciador')">Gerenciar Banco</button>
+    </div>
+
+    <div class="content">
+        <!-- DASHBOARD -->
+        <div id="dashboard" class="section active">
+            <h2>Visao Geral</h2>
+            <br>
+            <div class="cards">
+                <div class="card"><h3 id="stat-usuarios">0</h3><p>Usuarios Cadastrados</p></div>
+                <div class="card"><h3 id="stat-acessos">0</h3><p>Registros de Acesso</p></div>
+            </div>
+            <h3>Ultimos Acessos Reconhecidos</h3>
+            <table>
+                <thead><tr><th>ID</th><th>Nome</th><th>Data/Hora</th></tr></thead>
+                <tbody id="tbl-acessos"></tbody>
+            </table>
+        </div>
+
+        <!-- RECONHECIMENTO -->
+        <div id="reconhecimento" class="section">
+            <h2>Reconhecimento Facial em Tempo Real (Otimizado)</h2>
+            <br>
+            <div class="camera-container">
+                <video id="video-rec" autoplay muted style="display:none;"></video>
+                <img id="processed-rec" alt="Aguardando Video...">
+            </div>
+            <br>
+            <span class="status-dot" id="dot-rec"></span><span id="status-rec" style="font-weight:600;">Parado</span>
+            <br><br>
+            <button id="btn-iniciar-rec" class="btn" onclick="iniciarReconhecimento()">Iniciar Reconhecimento</button>
+            <button id="btn-parar-rec" class="btn btn-danger" onclick="pararReconhecimento()" disabled>Parar</button>
+        </div>
+
+        <!-- CADASTRAR -->
+        <div id="cadastrar" class="section">
+            <h2>Cadastro Automatico em Sequencia (Meta: 50 Fotos)</h2>
+            <br>
+            <div class="form-group">
+                <label>Nome do Usuario:</label>
+                <input type="text" id="nome-cadastro" placeholder="Ex: Joao Silva">
+            </div>
+            
+            <div class="camera-container">
+                <div id="flash-cad" class="flash-overlay"></div>
+                <video id="video-cad" autoplay muted></video>
+                <img id="preview-cad" alt="Indicador de Reconhecimento OpenCV">
+            </div>
+
+            <div class="progress-bar-container">
+                <div id="barra-progresso" class="progress-bar">0%</div>
+            </div>
+
+            <br>
+            <button id="btn-iniciar-seq" class="btn" onclick="iniciarSequenciaCadastro()">Iniciar Sequencia Automatica</button>
+            <button id="btn-parar-seq" class="btn btn-danger" onclick="pararSequenciaCadastro()" disabled>Parar Processo</button>
+            <p id="msg-cadastro" style="margin-top:10px; font-weight:bold;"></p>
+        </div>
+
+        <!-- GERENCIADOR -->
+        <div id="gerenciador" class="section">
+            <h2>Gerenciar Banco de Dados (faces.db)</h2>
+            <br>
+            <div style="background: #fff; padding: 20px; border-radius: 8px; margin-bottom: 20px; border: 1px solid #e2e8f0;">
+                <h3>Acoes de Usuario</h3>
+                <br>
+                <div style="display: flex; gap: 20px;">
+                    <!-- Renomear -->
+                    <div style="flex: 1;">
+                        <h4>Renomear Usuario</h4>
+                        <br>
+                        <div class="form-group">
+                            <label>Selecione o Usuario:</label>
+                            <select id="select-renomear"></select>
+                        </div>
+                        <div class="form-group">
+                            <label>Novo Nome:</label>
+                            <input type="text" id="novo-nome-input" placeholder="Novo Nome">
+                        </div>
+                        <button id="btn-renomear" class="btn" onclick="renomearUsuario()">Salvar Novo Nome</button>
+                    </div>
+
+                    <!-- Adicionar Fotos Sequenciais -->
+                    <div style="flex: 1;">
+                        <h4>Adicionar Fotos Sequenciais</h4>
+                        <br>
+                        <div class="form-group">
+                            <label>Selecione o Usuario:</label>
+                            <select id="select-add-foto" onchange="atualizarContadorFotos()"></select>
+                            <div id="badge-contador" class="badge-fotos">Fotos: 0 / 50</div>
+                        </div>
+                        <div class="camera-container" style="height: 220px;">
+                            <div id="flash-add" class="flash-overlay"></div>
+                            <video id="video-add-foto" autoplay muted style="width: 50%; height: 100%;"></video>
+                            <img id="preview-add" style="width: 50%; height: 100%;" alt="Marcador OpenCV">
+                        </div>
+                        <br>
+                        <button id="btn-iniciar-add-seq" class="btn" onclick="iniciarSequenciaAdicao()">Iniciar Sequencia</button>
+                        <button id="btn-parar-add-seq" class="btn btn-danger" onclick="pararSequenciaAdicao()" disabled>Parar</button>
+                    </div>
+                </div>
+                <p id="msg-gerenciador" style="margin-top: 15px; font-weight: bold;"></p>
+            </div>
+
+            <table>
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>Nome</th>
+                        <th>Total de Fotos</th>
+                        <th>Status Minimo (50 Fotos)</th>
+                        <th>Acoes</th>
+                    </tr>
+                </thead>
+                <tbody id="tbl-usuarios"></tbody>
+            </table>
+        </div>
+    </div>
+
+    <script>
+        // ---------------------------------------------------------------
+        // Estado global centralizado das cameras. Antes cada secao abria
+        // sua propria getUserMedia sem nunca parar a anterior; agora todo
+        // stream ativo fica registrado aqui e e' sempre encerrado ao trocar
+        // de secao, evitando cameras "fantasmas" rodando em segundo plano.
+        // ---------------------------------------------------------------
+        const cameras = { rec: null, cad: null, add: null };
+
+        let emReconhecimento = false;
+        let emSequenciaCadastro = false;
+        let emSequenciaAdicao = false;
+        let listaUsuariosGlobal = [];
+        let pollingDashboard = null;
+
+        function dispararFlash(elementId) {
+            const flash = document.getElementById(elementId);
+            flash.classList.remove('flash-effect');
+            void flash.offsetWidth;
+            flash.classList.add('flash-effect');
+        }
+
+        async function ligarCamera(chave, videoId) {
+            // Reaproveita o stream se ja estiver ativo, em vez de pedir a
+            // camera de novo toda vez que o usuario reabre a secao.
+            const video = document.getElementById(videoId);
+            if (cameras[chave] && video.srcObject === cameras[chave]) return cameras[chave];
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+                cameras[chave] = stream;
+                video.srcObject = stream;
+                return stream;
+            } catch (e) {
+                console.error(`Nao foi possivel acessar a camera (${chave}):`, e);
+                return null;
+            }
+        }
+
+        function desligarCamera(chave) {
+            if (cameras[chave]) {
+                cameras[chave].getTracks().forEach(track => track.stop());
+                cameras[chave] = null;
+            }
+        }
+
+        function desligarTodasCameras() {
+            Object.keys(cameras).forEach(desligarCamera);
+        }
+
+        function showSection(id) {
+            pararSequenciaCadastro();
+            pararSequenciaAdicao();
+            pararReconhecimento();
+            desligarTodasCameras();
+
+            document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
+            document.querySelectorAll('.sidebar button').forEach(b => b.classList.remove('active'));
+            
+            const targetSection = document.getElementById(id);
+            targetSection.classList.add('active');
+            
+            const btnMap = { 'dashboard': 0, 'reconhecimento': 1, 'cadastrar': 2, 'gerenciador': 3 };
+            const buttons = document.querySelectorAll('.sidebar button');
+            if (buttons[btnMap[id]]) buttons[btnMap[id]].classList.add('active');
+
+            carregarDados();
+
+            if (id === 'cadastrar') ligarCamera('cad', 'video-cad');
+            if (id === 'gerenciador') ligarCamera('add', 'video-add-foto');
+        }
+
+        async function carregarDados() {
+            try {
+                const res = await fetch('/api/dados');
+                const data = await res.json();
+                listaUsuariosGlobal = data.usuarios;
+                
+                document.getElementById('stat-usuarios').innerText = data.usuarios.length;
+                document.getElementById('stat-acessos').innerText = data.acessos.length;
+
+                const tbodyAcessos = document.getElementById('tbl-acessos');
+                tbodyAcessos.innerHTML = data.acessos.map(a => `<tr><td>${a[0]}</td><td>${a[1]}</td><td>${a[2]}</td></tr>`).join('');
+
+                const tbodyUsuarios = document.getElementById('tbl-usuarios');
+                tbodyUsuarios.innerHTML = data.usuarios.map(u => {
+                    const atingeMinimo = u[3] >= 50;
+                    const statusBadge = atingeMinimo 
+                        ? `<span class="badge-fotos badge-ok">Pronto (${u[3]}/50)</span>` 
+                        : `<span class="badge-fotos badge-alerta">Pendente (${u[3]}/50)</span>`;
+                    return `<tr><td>${u[0]}</td><td>${u[1]}</td><td>${u[3]} foto(s)</td><td>${statusBadge}</td>
+                    <td><button class="btn btn-danger" onclick="deletarUsuario('${u[1]}')">Excluir</button></td></tr>`;
+                }).join('');
+
+                const selectRenomear = document.getElementById('select-renomear');
+                const selectAddFoto = document.getElementById('select-add-foto');
+
+                const valRenomear = selectRenomear.value;
+                const valAddFoto = selectAddFoto.value;
+
+                const optionsHtml = data.usuarios.map(u => `<option value="${u[1]}">${u[1]}</option>`).join('');
+                selectRenomear.innerHTML = optionsHtml;
+                selectAddFoto.innerHTML = optionsHtml;
+
+                if (valRenomear) selectRenomear.value = valRenomear;
+                if (valAddFoto) selectAddFoto.value = valAddFoto;
+
+                atualizarContadorFotos();
+            } catch (e) {
+                console.error("Erro ao atualizar dados: ", e);
+            }
+        }
+
+        function atualizarContadorFotos() {
+            const sel = document.getElementById('select-add-foto').value;
+            const usr = listaUsuariosGlobal.find(u => u[1] === sel);
+            const qtd = usr ? usr[3] : 0;
+            const badge = document.getElementById('badge-contador');
+            badge.innerText = `Fotos no faces.db: ${qtd} / 50`;
+            badge.className = qtd >= 50 ? "badge-fotos badge-ok" : "badge-fotos badge-alerta";
+        }
+
+        // ---------------------------------------------------------------
+        // Reconhecimento: antes usava setInterval fixo em 60ms, o que podia
+        // disparar uma nova requisicao antes da anterior terminar (fila de
+        // pedidos se acumulando). Agora e' um loop recursivo que so envia o
+        // proximo frame depois que o servidor respondeu, o que o torna
+        // auto-adaptativo a velocidade real da rede/processamento.
+        // ---------------------------------------------------------------
+        async function iniciarReconhecimento() {
+            const stream = await ligarCamera('rec', 'video-rec');
+            if (!stream) {
+                document.getElementById('status-rec').innerText = "Camera indisponivel";
+                return;
+            }
+
+            emReconhecimento = true;
+            document.getElementById('btn-iniciar-rec').disabled = true;
+            document.getElementById('btn-parar-rec').disabled = false;
+            document.getElementById('status-rec').innerText = "Em execucao";
+            document.getElementById('dot-rec').className = "status-dot on";
+
+            const video = document.getElementById('video-rec');
+            const canvas = document.createElement('canvas');
+            canvas.width = 320;
+            canvas.height = 240;
+
+            while (emReconhecimento) {
+                canvas.getContext('2d').drawImage(video, 0, 0, 320, 240);
+                const dataUrl = canvas.toDataURL('image/jpeg', 0.5);
+
+                try {
+                    const response = await fetch('/api/reconhecer', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ image: dataUrl })
+                    });
+                    const resData = await response.json();
+                    if (resData.image) {
+                        document.getElementById('processed-rec').src = resData.image;
+                    }
+                } catch (e) {
+                    console.error("Falha no reconhecimento:", e);
+                    document.getElementById('status-rec').innerText = "Erro de conexao, tentando novamente...";
+                }
+
+                // Pequena pausa apenas para nao saturar a CPU; como o loop
+                // espera a resposta do servidor, ele ja e' naturalmente
+                // limitado pela velocidade real de processamento.
+                await new Promise(r => setTimeout(r, 15));
+            }
+        }
+
+        function pararReconhecimento() {
+            emReconhecimento = false;
+            desligarCamera('rec');
+            document.getElementById('btn-iniciar-rec').disabled = false;
+            document.getElementById('btn-parar-rec').disabled = true;
+            document.getElementById('status-rec').innerText = "Parado";
+            document.getElementById('dot-rec').className = "status-dot off";
+        }
+
+        async function iniciarSequenciaCadastro() {
+            const nome = document.getElementById('nome-cadastro').value;
+            if (!nome) return alert('Insira um nome!');
+
+            const stream = await ligarCamera('cad', 'video-cad');
+            if (!stream) {
+                document.getElementById('msg-cadastro').innerText = "Camera indisponivel.";
+                return;
+            }
+
+            emSequenciaCadastro = true;
+            document.getElementById('btn-iniciar-seq').disabled = true;
+            document.getElementById('btn-parar-seq').disabled = false;
+            document.getElementById('msg-cadastro').innerText = "Iniciando sequencia de captura...";
+
+            const video = document.getElementById('video-cad');
+            const canvas = document.createElement('canvas');
+            canvas.width = 440;
+            canvas.height = 330;
+
+            while (emSequenciaCadastro) {
+                canvas.getContext('2d').drawImage(video, 0, 0, 440, 330);
+                const dataUrl = canvas.toDataURL('image/jpeg', 0.7);
+
+                try {
+                    const res = await fetch('/api/cadastrar', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ nome: nome, image: dataUrl })
+                    });
+
+                    const data = await res.json();
+                    if (data.preview) document.getElementById('preview-cad').src = data.preview;
+
+                    if (res.ok) {
+                        dispararFlash('flash-cad');
+                        const total = data.total;
+                        const pct = Math.min(100, Math.round((total / 50) * 100));
+
+                        const barra = document.getElementById('barra-progresso');
+                        barra.style.width = pct + "%";
+                        barra.innerText = `${pct}% (${total}/50)`;
+
+                        document.getElementById('msg-cadastro').innerText = data.mensagem;
+                        if (total >= 50) {
+                            document.getElementById('msg-cadastro').innerText = "Cadastro completo! 50 fotos registradas com sucesso.";
+                            pararSequenciaCadastro();
+                            break;
+                        }
+                    } else {
+                        document.getElementById('msg-cadastro').innerText = data.mensagem;
+                    }
+                } catch (e) {
+                    console.error("Falha na captura:", e);
+                    document.getElementById('msg-cadastro').innerText = "Erro de conexao durante a captura.";
+                }
+
+                await new Promise(r => setTimeout(r, 150));
+            }
+            carregarDados();
+        }
+
+        function pararSequenciaCadastro() {
+            emSequenciaCadastro = false;
+            document.getElementById('btn-iniciar-seq').disabled = false;
+            document.getElementById('btn-parar-seq').disabled = true;
+        }
+
+        async function iniciarSequenciaAdicao() {
+            const nome = document.getElementById('select-add-foto').value;
+            if (!nome) return alert("Selecione um usuario!");
+
+            const stream = await ligarCamera('add', 'video-add-foto');
+            if (!stream) {
+                document.getElementById('msg-gerenciador').innerText = "Camera indisponivel.";
+                return;
+            }
+
+            emSequenciaAdicao = true;
+            document.getElementById('btn-iniciar-add-seq').disabled = true;
+            document.getElementById('btn-parar-add-seq').disabled = false;
+
+            const video = document.getElementById('video-add-foto');
+            const canvas = document.createElement('canvas');
+            canvas.width = 320;
+            canvas.height = 240;
+
+            while (emSequenciaAdicao) {
+                canvas.getContext('2d').drawImage(video, 0, 0, 320, 240);
+                const dataUrl = canvas.toDataURL('image/jpeg', 0.7);
+
+                try {
+                    const res = await fetch('/api/adicionar_foto', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ nome: nome, image: dataUrl })
+                    });
+
+                    const data = await res.json();
+                    if (data.preview) document.getElementById('preview-add').src = data.preview;
+
+                    document.getElementById('msg-gerenciador').innerText = data.mensagem;
+                    if (res.ok) {
+                        dispararFlash('flash-add');
+                        carregarDados();
+                    }
+                } catch (e) {
+                    console.error("Falha na adicao de foto:", e);
+                    document.getElementById('msg-gerenciador').innerText = "Erro de conexao durante a captura.";
+                }
+
+                await new Promise(r => setTimeout(r, 150));
+            }
+        }
+
+        function pararSequenciaAdicao() {
+            emSequenciaAdicao = false;
+            document.getElementById('btn-iniciar-add-seq').disabled = false;
+            document.getElementById('btn-parar-add-seq').disabled = true;
+        }
+
+        async function renomearUsuario() {
+            const nomeAntigo = document.getElementById('select-renomear').value;
+            const novoNome = document.getElementById('novo-nome-input').value;
+
+            if (!novoNome) return alert("Digite o novo nome!");
+
+            const btn = document.getElementById('btn-renomear');
+            btn.disabled = true;
+            try {
+                const res = await fetch('/api/renomear', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ nome_antigo: nomeAntigo, novo_nome: novoNome })
+                });
+
+                const data = await res.json();
+                document.getElementById('msg-gerenciador').innerText = data.mensagem;
+                document.getElementById('novo-nome-input').value = "";
+                carregarDados();
+            } finally {
+                btn.disabled = false;
+            }
+        }
+
+        async function deletarUsuario(nome) {
+            if (!confirm(`Remover ${nome} e todas as fotos do banco faces.db?`)) return;
+            await fetch('/api/deletar', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ nome: nome })
+            });
+            carregarDados();
+        }
+
+        function iniciarPollingDashboard() {
+            if (pollingDashboard) clearInterval(pollingDashboard);
+            pollingDashboard = setInterval(() => {
+                const dashboardActive = document.getElementById('dashboard').classList.contains('active');
+                if (dashboardActive) carregarDados();
+            }, 3000);
+        }
+
+        // O polling do dashboard agora respeita a aba do navegador: quando
+        // o usuario muda de aba/minimiza a janela, paramos de gastar
+        // requisicoes a toa e retomamos assim que ele volta.
+        document.addEventListener('visibilitychange', () => {
+            if (document.hidden) {
+                if (pollingDashboard) clearInterval(pollingDashboard);
+            } else {
+                carregarDados();
+                iniciarPollingDashboard();
+            }
+        });
+
+        // Garante que nenhuma camera fique ligada se o usuario fechar a aba.
+        window.addEventListener('beforeunload', desligarTodasCameras);
+
+        // Inicializacao
+        carregarDados();
+        iniciarPollingDashboard();
+    </script>
+</body>
+</html>
