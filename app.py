@@ -32,9 +32,10 @@ DB_FILE = os.path.join(BASE_DIR, "faces.db")
 MINIMO_FOTOS_REQUERIDO = 50
 TOLERANCIA = 0.48
 
+# Carregamento do Haar Cascade com fallback automático
 XML_LOCAL = os.path.join(BASE_DIR, "haarcascade_frontalface_default.xml")
 if not os.path.exists(XML_LOCAL):
-    print(f"Erro: Arquivo '{XML_LOCAL}' nao encontrado na pasta do projeto.")
+    XML_LOCAL = os.path.join(cv2.data.haarcascades, "haarcascade_frontalface_default.xml")
 
 face_cascade = cv2.CascadeClassifier(XML_LOCAL)
 
@@ -239,7 +240,9 @@ def processar_captura(nome_raw, img_b64, permitir_criar_usuario):
     cv2.imwrite(caminho_foto, frame)
 
     blob_encoding = encodings[0].tobytes()
-    cursor.execute("INSERT OR REPLACE INTO usuarios (nome, pasta) VALUES (?, ?)", (nome, pasta_destino))
+    
+    # Mantém os dados da conta (senha/role) inalterados se o usuário já existir
+    cursor.execute("INSERT OR IGNORE INTO usuarios (nome, pasta) VALUES (?, ?)", (nome, pasta_destino))
     cursor.execute(
         "INSERT INTO encodings (nome, encoding, caminho_foto) VALUES (?, ?, ?)",
         (nome, blob_encoding, caminho_foto),
@@ -307,7 +310,6 @@ def login_senha():
     return jsonify({"sucesso": True, "redirect": url_for('index')})
 
 
-# ATENÇÃO: Rota PÚBLICA de criação de conta (Sem @login_required)
 @app.route('/api/cadastrar_usuario', methods=['POST'])
 def cadastrar_usuario():
     data = request.json or {}
@@ -415,7 +417,7 @@ def reconhecer():
     encodings_conhecidos = ENCODINGS_CACHE["vecs"]
 
     if not encodings_conhecidos:
-        return jsonify({"image": cv2_to_base64(frame)})
+        return jsonify({"image": cv2_to_base64(frame), "reconhecidos": []})
 
     small_frame = cv2.resize(frame, (0, 0), fx=0.5, fy=0.5)
     gray_small = cv2.cvtColor(small_frame, cv2.COLOR_BGR2GRAY)
