@@ -16,8 +16,8 @@
             --text-muted: #94a3b8;
             --accent-color: #38bdf8;
             --accent-hover: #0284c7;
-            --admin-color: #38bdf8;
-            --admin-hover: #0284c7;
+            --admin-color: #f59e0b;
+            --admin-hover: #d97706;
             --success-color: #10b981;
             --success-hover: #059669;
         }
@@ -455,7 +455,8 @@
             const confirmarSenha = document.getElementById('cad-confirmar-senha').value;
 
             try {
-                const response = await fetch('/api/cadastrar', {
+                // Rota corrigida para a criação de novos usuários pública
+                const response = await fetch('/api/cadastrar_usuario', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ 
