@@ -24,7 +24,7 @@ app = Flask(
     template_folder=TEMPLATES_DIR,
 )
 
-# Chave secreta necessária para gerenciar sessões (cookies)
+# Chave secreta para gerenciamento de sessões
 app.secret_key = "sua_chave_secreta_super_segura_aqui"
 
 DATASET_DIR = os.path.join(BASE_DIR, "dataset")
@@ -65,7 +65,7 @@ def init_db():
         )
     """)
 
-    # Garantir compatibilidade se a tabela 'usuarios' já existia antes sem as novas colunas
+    # Garantir colunas 'senha' e 'role' em bancos existentes
     cursor.execute("PRAGMA table_info(usuarios)")
     colunas = [col[1] for col in cursor.fetchall()]
     if "senha" not in colunas:
@@ -89,7 +89,7 @@ def init_db():
         )
     """)
 
-    # Criar um usuário administrador padrão caso não exista
+    # Admin padrão
     cursor.execute("SELECT COUNT(*) FROM usuarios WHERE nome = 'admin'")
     if cursor.fetchone()[0] == 0:
         pasta_admin = os.path.join(DATASET_DIR, "admin")
@@ -125,7 +125,7 @@ init_db()
 recarregar_cache_encodings()
 
 
-# --- DECORADORES DE PROTEÇÃO DE ROTAS ---
+# --- DECORADORES DE PROTEÇÃO ---
 
 def login_required(f):
     @wraps(f)
@@ -145,7 +145,7 @@ def admin_required(f):
     return decorated_function
 
 
-# --- FUNÇÕES AUXILIARES DE IMAGEM ---
+# --- AUXILIARES DE IMAGEM ---
 
 def base64_to_cv2(b64_string):
     try:
@@ -262,7 +262,7 @@ def processar_captura(nome_raw, img_b64, permitir_criar_usuario):
     }
 
 
-# --- ROTAS DE AUTENTICAÇÃO E TELA DE LOGIN ---
+# --- ROTAS PÚBLICAS (AUTENTICAÇÃO E CADASTRO DE CONTA) ---
 
 @app.route('/login', methods=['GET'])
 def login_page():
@@ -276,7 +276,7 @@ def login_senha():
     data = request.json or {}
     usuario_raw = data.get('usuario', '').strip()
     senha_input = data.get('senha', '')
-    tipo_acesso = data.get('tipo_acesso', 'user')  # 'user' ou 'admin'
+    tipo_acesso = data.get('tipo_acesso', 'user')
 
     if not usuario_raw or not senha_input:
         return jsonify({"sucesso": False, "mensagem": "Preencha todos os campos!"}), 400
@@ -295,7 +295,6 @@ def login_senha():
 
     nome_db, role_db = user[0], user[1]
 
-    # Recusa se o perfil for 'user' e tentar entrar pela aba de Administrador
     if tipo_acesso == 'admin' and role_db != 'admin':
         return jsonify({
             "sucesso": False, 
@@ -308,6 +307,7 @@ def login_senha():
     return jsonify({"sucesso": True, "redirect": url_for('index')})
 
 
+# ATENÇÃO: Rota PÚBLICA de criação de conta (Sem @login_required)
 @app.route('/api/cadastrar_usuario', methods=['POST'])
 def cadastrar_usuario():
     data = request.json or {}
@@ -357,7 +357,7 @@ def logout():
     return redirect(url_for('login_page'))
 
 
-# --- ROTAS DA APLICAÇÃO ---
+# --- ROTAS PROTEGIDAS DA APLICAÇÃO ---
 
 @app.route('/')
 @login_required
