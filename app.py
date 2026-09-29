@@ -275,6 +275,7 @@ def login_senha():
     data = request.json or {}
     usuario_raw = data.get('usuario', '').strip()
     senha_input = data.get('senha', '')
+    tipo_acesso = data.get('tipo_acesso', 'user')
 
     if not usuario_raw or not senha_input:
         return jsonify({"sucesso": False, "mensagem": "Preencha todos os campos!"}), 400
@@ -293,10 +294,56 @@ def login_senha():
     if not user:
         return jsonify({"sucesso": False, "mensagem": "Usuário ou senha inválidos!"}), 401
 
-    session['usuario'] = user[0]
-    session['role'] = user[1]
+    user_nome, user_role = user
+
+    if tipo_acesso == 'admin' and user_role != 'admin':
+        return jsonify({"sucesso": False, "mensagem": "Acesso negado: conta sem permissão de administrador."}), 403
+
+    session['usuario'] = user_nome
+    session['role'] = user_role
 
     return jsonify({"sucesso": True, "redirect": url_for('index')})
+
+
+@app.route('/api/cadastrar_usuario', methods=['POST'])
+def cadastrar_usuario():
+    data = request.json or {}
+    usuario_raw = data.get('usuario', '').strip()
+    senha = data.get('senha', '')
+    confirmar_senha = data.get('confirmar_senha', '')
+    role = data.get('role', 'user')
+
+    if not usuario_raw or not senha or not confirmar_senha:
+        return jsonify({"sucesso": False, "mensagem": "Preencha todos os campos!"}), 400
+
+    if senha != confirmar_senha:
+        return jsonify({"sucesso": False, "mensagem": "As senhas não coincidem!"}), 400
+
+    if len(senha) < 4:
+        return jsonify({"sucesso": False, "mensagem": "A senha deve ter no mínimo 4 caracteres!"}), 400
+
+    usuario_norm = normalizar_nome(usuario_raw)
+    if not usuario_norm:
+        return jsonify({"sucesso": False, "mensagem": "Nome de usuário inválido!"}), 400
+
+    pasta_usuario = os.path.join(DATASET_DIR, usuario_norm)
+    os.makedirs(pasta_usuario, exist_ok=True)
+
+    try:
+        conn = sqlite3.connect(DB_FILE)
+        cursor = conn.cursor()
+        cursor.execute(
+            "INSERT INTO usuarios (nome, pasta, senha, role) VALUES (?, ?, ?, ?)",
+            (usuario_norm, pasta_usuario, senha, role)
+        )
+        conn.commit()
+        conn.close()
+    except sqlite3.IntegrityError:
+        return jsonify({"sucesso": False, "mensagem": "Usuário já existente!"}), 400
+    except Exception as e:
+        return jsonify({"sucesso": False, "mensagem": f"Erro no banco de dados: {str(e)}"}), 500
+
+    return jsonify({"sucesso": True, "mensagem": f"Conta de {role.capitalize()} criada com sucesso!"})
 
 
 @app.route('/logout')

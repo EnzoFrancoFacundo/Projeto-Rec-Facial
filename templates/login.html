@@ -103,7 +103,6 @@
             transition: color 0.3s;
         }
 
-        /* Abas Usuário / Administrador */
         .role-tabs {
             display: flex;
             background: var(--bg-body);
@@ -154,7 +153,7 @@
             color: var(--text-muted);
         }
 
-        .form-group input {
+        .form-group input, .form-group select {
             width: 100%;
             padding: 11px 14px;
             border: 1px solid var(--border-card);
@@ -166,11 +165,11 @@
             transition: border-color 0.2s;
         }
 
-        .form-group input:focus {
+        .form-group input:focus, .form-group select:focus {
             border-color: var(--accent-color);
         }
 
-        body.admin-mode .form-group input:focus {
+        body.admin-mode .form-group input:focus, body.admin-mode .form-group select:focus {
             border-color: var(--admin-color);
         }
 
@@ -296,7 +295,6 @@
 
         <!-- SEÇÃO DE LOGIN -->
         <div id="sec-login" class="form-section active">
-            <!-- Seletor Usuário vs Administrador -->
             <div class="role-tabs">
                 <button id="btn-tab-user" class="role-btn active-user" onclick="setRole('user')">
                     Usuário
@@ -331,6 +329,13 @@
                     <input type="text" id="cad-usuario" placeholder="Escolha seu usuário" required autocomplete="username">
                 </div>
                 <div class="form-group">
+                    <label for="cad-role">Tipo de Conta</label>
+                    <select id="cad-role" required>
+                        <option value="user">Usuário Comum</option>
+                        <option value="admin">Administrador</option>
+                    </select>
+                </div>
+                <div class="form-group">
                     <label for="cad-senha">Senha</label>
                     <input type="password" id="cad-senha" placeholder="Mínimo 4 caracteres" required autocomplete="new-password">
                 </div>
@@ -338,7 +343,7 @@
                     <label for="cad-confirmar-senha">Confirmar Senha</label>
                     <input type="password" id="cad-confirmar-senha" placeholder="Repita a senha" required autocomplete="new-password">
                 </div>
-                <button type="submit" class="btn btn-cadastrar">Criar Minha Conta</button>
+                <button type="submit" class="btn btn-cadastrar">Criar Conta</button>
             </form>
 
             <div class="toggle-form-link">
@@ -451,16 +456,22 @@
             ocultarErro();
 
             const usuario = document.getElementById('cad-usuario').value;
+            const role = document.getElementById('cad-role').value;
             const senha = document.getElementById('cad-senha').value;
             const confirmarSenha = document.getElementById('cad-confirmar-senha').value;
 
+            if (senha !== confirmarSenha) {
+                exibirAlerta('As senhas não coincidem!');
+                return;
+            }
+
             try {
-                // Rota corrigida para a criação de novos usuários pública
                 const response = await fetch('/api/cadastrar_usuario', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ 
-                        usuario: usuario, 
+                        usuario: usuario,
+                        role: role,
                         senha: senha,
                         confirmar_senha: confirmarSenha 
                     })
