@@ -268,7 +268,7 @@ def processar_captura(nome_raw, img_b64, permitir_criar_usuario):
 # --- ROTAS PÚBLICAS (AUTENTICAÇÃO E CADASTRO DE CONTA) ---
 
 @app.route('/login', methods=['GET'])
-def login_page():
+def login():
     if 'usuario' in session:
         return redirect(url_for('index'))
     return render_template('login.html')
@@ -356,7 +356,7 @@ def cadastrar_usuario():
 @app.route('/logout')
 def logout():
     session.clear()
-    return redirect(url_for('login_page'))
+    return redirect(url_for('login'))
 
 
 # --- ROTAS PROTEGIDAS DA APLICAÇÃO ---
