@@ -24,7 +24,7 @@ app = Flask(
     template_folder=TEMPLATES_DIR,
 )
 
-# Chave secreta de sessão
+# Chave secreta e configurações de sessão
 app.secret_key = "sua_chave_secreta_super_segura_aqui"
 app.config['SESSION_PERMANENT'] = False
 
