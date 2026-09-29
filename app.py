@@ -132,7 +132,7 @@ def login_required(f):
     @wraps(f)
     def decorated_function(*args, **kwargs):
         if 'usuario' not in session:
-            return redirect(url_for('login_page'))
+            return redirect(url_for('login'))  # CORRIGIDO: de 'login_page' para 'login'
         return f(*args, **kwargs)
     return decorated_function
 
