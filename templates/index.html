@@ -138,75 +138,6 @@
         .theme-toggle-btn { background-color: transparent; border: 1px solid var(--border-card); color: var(--text-main); width: 40px; height: 40px; border-radius: 50%; cursor: pointer; font-size: 1.2rem; display: flex; align-items: center; justify-content: center; transition: all 0.2s ease; }
         .theme-toggle-btn:hover { background-color: var(--border-card); }
 
-        /* Olho Dreamcore / VHS */
-        .dreamcore-vhs-container {
-            position: relative;
-            width: 36px;
-            height: 36px;
-            background-color: #050505;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            overflow: hidden;
-            border: 1px solid #334155;
-            border-radius: 8px;
-            box-shadow: 0 0 8px rgba(255, 0, 85, 0.2), 0 0 8px rgba(0, 255, 255, 0.2);
-            flex-shrink: 0;
-        }
-
-        .dreamcore-vhs-container::before {
-            content: " ";
-            position: absolute;
-            top: 0; left: 0; bottom: 0; right: 0;
-            background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.4) 50%);
-            background-size: 100% 3px;
-            z-index: 10;
-            pointer-events: none;
-        }
-
-        .vhs-noise {
-            position: absolute;
-            width: 100%;
-            height: 100%;
-            background: repeating-radial-gradient(circle at 50% 50%, rgba(255,255,255,0.15), rgba(0,0,0,0.8) 2px);
-            opacity: 0.15;
-            animation: staticNoise 0.1s infinite alternate;
-            z-index: 5;
-            pointer-events: none;
-        }
-
-        .eye-svg {
-            width: 24px;
-            height: 24px;
-            filter: drop-shadow(1px 0px 0px rgba(255,0,85,0.8)) drop-shadow(-1px 0px 0px rgba(0,255,255,0.8));
-            animation: vhsShake 0.4s infinite alternate;
-        }
-
-        .iris-pupil { animation: moveIris 4s ease-in-out infinite alternate; }
-
-        @keyframes moveIris {
-            0%   { transform: translate(0px, 0px); }
-            20%  { transform: translate(-6px, 0px); }
-            40%  { transform: translate(6px, 0px); }
-            50%  { transform: translate(0px, -4px); }
-            70%  { transform: translate(-4px, 3px); }
-            100% { transform: translate(5px, -1px); }
-        }
-
-        @keyframes vhsShake {
-            0% { transform: translate(0, 0) skewX(0deg); }
-            20% { transform: translate(-1px, 0.5px) skewX(1deg); }
-            40% { transform: translate(1px, -0.5px) skewX(-1deg); }
-            60% { transform: translate(-0.5px, -0.5px) skewX(1.5deg); }
-            80% { transform: translate(1.5px, 0.5px) skewX(-1.5deg); }
-            100% { transform: translate(0, 0) skewX(0deg); }
-        }
-
-        @keyframes staticNoise {
-            0% { opacity: 0.12; transform: scale(1); }
-            100% { opacity: 0.22; transform: scale(1.02); }
-        }
-
         /* Área de Conteúdo */
         .content { flex: 1; padding: 32px; overflow-y: auto; }
         .section { display: none; opacity: 0; transform: translateY(8px); transition: opacity 0.3s ease, transform 0.3s ease; }
@@ -256,20 +187,17 @@
         .footer { padding: 16px 32px; background-color: var(--bg-footer); border-top: 1px solid var(--border-footer); text-align: center; font-size: 0.85rem; color: var(--text-muted); }
     </style>
 </head>
-<body class="{{ body_class }}">
+<body>
 
     <div class="sidebar">
         <div class="sidebar-brand">
-            <div class="dreamcore-vhs-container">
-                <div class="vhs-noise"></div>
-                <svg class="eye-svg" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
-                    <path d="M5 50 C25 20, 75 20, 95 50 C75 80, 25 80, 5 50 Z" stroke="#ffffff" stroke-width="6" fill="none" />
-                    <line x1="15" y1="85" x2="85" y2="15" stroke="#ffffff" stroke-width="6" stroke-linecap="round" />
-                    <g class="iris-pupil">
-                        <circle cx="50" cy="50" r="16" fill="#ffffff" />
-                    </g>
-                </svg>
-            </div>
+            <!-- Ícone simples no lugar da animação de visão -->
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#38bdf8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="3" y="3" width="7" height="7"></rect>
+                <rect x="14" y="3" width="7" height="7"></rect>
+                <rect x="14" y="14" width="7" height="7"></rect>
+                <rect x="3" y="14" width="7" height="7"></rect>
+            </svg>
             <h2>Painel Facial</h2>
         </div>
 
@@ -307,8 +235,8 @@
             </div>
             
             <div class="header-controls">
-                <!-- Botão de Sair com redirecionamento para o login.html -->
-                <a href="{{ url_for('login') }}" class="btn-logout" title="Sair do Sistema">
+                <!-- Botão Sair apontando explicitamente para a tela de login -->
+                <a href="{{ url_for('login') }}" class="btn-logout" title="Sair do Sistema" onclick="fazerLogout(event)">
                     <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
                         <path fill-rule="evenodd" d="M10 12.5a.5.5 0 0 1-.5.5h-8a.5.5 0 0 1-.5-.5v-9a.5.5 0 0 1 .5-.5h8a.5.5 0 0 1 .5.5v2a.5.5 0 0 0 1 0v-2A1.5 1.5 0 0 0 9.5 2h-8A1.5 1.5 0 0 0 0 3.5v9A1.5 1.5 0 0 0 1.5 14h8a1.5 1.5 0 0 0 1.5-1.5v-2a.5.5 0 0 0-1 0z"/>
                         <path fill-rule="evenodd" d="M15.854 8.354a.5.5 0 0 0 0-.708l-3-3a.5.5 0 1 0-.708.708L14.293 7.5H5.5a.5.5 0 0 0 0 1h8.793l-2.147 2.146a.5.5 0 0 0 .708.708z"/>
@@ -321,7 +249,7 @@
 
         <div class="content">
             <div id="dashboard" class="section active">
-                <h2>Visão Geral</h2>
+                <h2>Resumo do Sistema</h2>
                 <br>
                 <div class="cards">
                     <div class="card"><h3 id="stat-usuarios">0</h3><p>Usuários Cadastrados</p></div>
@@ -459,9 +387,15 @@
     <script>
         const cameras = { rec: null, cad: null, add: null };
 
-        // Função de Logout alternativa via JS
-        function fazerLogout() {
-            window.location.href = "{{ url_for('login') }}";
+        // Função para realizar logout e voltar diretamente para a página de login
+        function fazerLogout(e) {
+            // Caso seja usado fora do Flask jinja template, redireciona para login.html
+            const loginUrl = "{{ url_for('login') }}";
+            if (loginUrl && !loginUrl.includes("url_for")) {
+                window.location.href = loginUrl;
+            } else {
+                window.location.href = "login.html";
+            }
         }
 
         function alternarTema() {
