@@ -24,15 +24,16 @@ app = Flask(
     template_folder=TEMPLATES_DIR,
 )
 
-# Chave secreta para gerenciamento de sessões
+# Chave secreta de sessão
 app.secret_key = "sua_chave_secreta_super_segura_aqui"
+app.config['SESSION_PERMANENT'] = False
 
 DATASET_DIR = os.path.join(BASE_DIR, "dataset")
 DB_FILE = os.path.join(BASE_DIR, "faces.db")
 MINIMO_FOTOS_REQUERIDO = 50
 TOLERANCIA = 0.48
 
-# Carregamento do Haar Cascade com fallback automático
+# Haar Cascade Fallback
 XML_LOCAL = os.path.join(BASE_DIR, "haarcascade_frontalface_default.xml")
 if not os.path.exists(XML_LOCAL):
     XML_LOCAL = os.path.join(cv2.data.haarcascades, "haarcascade_frontalface_default.xml")
@@ -66,7 +67,6 @@ def init_db():
         )
     """)
 
-    # Garantir colunas 'senha' e 'role' em bancos existentes
     cursor.execute("PRAGMA table_info(usuarios)")
     colunas = [col[1] for col in cursor.fetchall()]
     if "senha" not in colunas:
@@ -90,7 +90,7 @@ def init_db():
         )
     """)
 
-    # Admin padrão
+    # Usuário admin padrão
     cursor.execute("SELECT COUNT(*) FROM usuarios WHERE nome = 'admin'")
     if cursor.fetchone()[0] == 0:
         pasta_admin = os.path.join(DATASET_DIR, "admin")
@@ -126,13 +126,13 @@ init_db()
 recarregar_cache_encodings()
 
 
-# --- DECORADORES DE PROTEÇÃO ---
+# --- DECORADORES DE SEGURANÇA ---
 
 def login_required(f):
     @wraps(f)
     def decorated_function(*args, **kwargs):
         if 'usuario' not in session:
-            return redirect(url_for('login'))  # CORRIGIDO: de 'login_page' para 'login'
+            return redirect(url_for('login'))
         return f(*args, **kwargs)
     return decorated_function
 
@@ -141,12 +141,12 @@ def admin_required(f):
     @wraps(f)
     def decorated_function(*args, **kwargs):
         if 'usuario' not in session or session.get('role') != 'admin':
-            return jsonify({"erro": "Acesso negado. Requer permissão de administrador."}), 403
+            return jsonify({"mensagem": "Acesso negado. Requer privilégios de Administrador."}), 403
         return f(*args, **kwargs)
     return decorated_function
 
 
-# --- AUXILIARES DE IMAGEM ---
+# --- AUXILIARES DE PROCESSAMENTO DE IMAGEM ---
 
 def base64_to_cv2(b64_string):
     try:
@@ -154,8 +154,7 @@ def base64_to_cv2(b64_string):
             return None
         encoded_data = b64_string.split(',')[1]
         nparr = np.frombuffer(base64.b64decode(encoded_data), np.uint8)
-        img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
-        return img
+        return cv2.imdecode(nparr, cv2.IMREAD_COLOR)
     except Exception:
         return None
 
@@ -193,11 +192,11 @@ def registrar_acesso(nome):
 def processar_captura(nome_raw, img_b64, permitir_criar_usuario):
     nome = normalizar_nome(nome_raw)
     if not nome:
-        return {"status": 400, "mensagem": "Nome invalido!"}
+        return {"status": 400, "mensagem": "Nome inválido!"}
 
     frame = base64_to_cv2(img_b64)
     if frame is None:
-        return {"status": 400, "mensagem": "Imagem invalida recebida da camera."}
+        return {"status": 400, "mensagem": "Imagem inválida recebida da câmera."}
 
     pasta_destino = os.path.join(DATASET_DIR, nome)
     os.makedirs(pasta_destino, exist_ok=True)
@@ -210,7 +209,7 @@ def processar_captura(nome_raw, img_b64, permitir_criar_usuario):
     if not boxes_small:
         return {
             "status": 400,
-            "mensagem": "Procurando rosto... Mantenha-se em frente a camera.",
+            "mensagem": "Procurando rosto... Mantenha-se em frente à câmera.",
             "preview": cv2_to_base64(frame),
         }
 
@@ -219,7 +218,7 @@ def processar_captura(nome_raw, img_b64, permitir_criar_usuario):
     if not encodings:
         return {
             "status": 400,
-            "mensagem": "Nao foi possivel extrair as caracteristicas do rosto. Tente novamente.",
+            "mensagem": "Não foi possível extrair características faciais.",
             "preview": cv2_to_base64(frame),
         }
 
@@ -230,7 +229,7 @@ def processar_captura(nome_raw, img_b64, permitir_criar_usuario):
         cursor.execute("SELECT 1 FROM usuarios WHERE nome = ?", (nome,))
         if cursor.fetchone() is None:
             conn.close()
-            return {"status": 400, "mensagem": "Usuario nao encontrado no faces.db!"}
+            return {"status": 400, "mensagem": "Usuário não encontrado no banco de dados!"}
 
     cursor.execute("SELECT COUNT(*) FROM encodings WHERE nome = ?", (nome,))
     total_atual = cursor.fetchone()[0]
@@ -241,7 +240,6 @@ def processar_captura(nome_raw, img_b64, permitir_criar_usuario):
 
     blob_encoding = encodings[0].tobytes()
     
-    # Mantém os dados da conta (senha/role) inalterados se o usuário já existir
     cursor.execute("INSERT OR IGNORE INTO usuarios (nome, pasta) VALUES (?, ?)", (nome, pasta_destino))
     cursor.execute(
         "INSERT INTO encodings (nome, encoding, caminho_foto) VALUES (?, ?, ?)",
@@ -265,12 +263,10 @@ def processar_captura(nome_raw, img_b64, permitir_criar_usuario):
     }
 
 
-# --- ROTAS PÚBLICAS (AUTENTICAÇÃO E CADASTRO DE CONTA) ---
+# --- ROTAS DE AUTENTICAÇÃO ---
 
 @app.route('/login', methods=['GET'])
 def login():
-    if 'usuario' in session:
-        return redirect(url_for('index'))
     return render_template('login.html')
 
 
@@ -279,7 +275,6 @@ def login_senha():
     data = request.json or {}
     usuario_raw = data.get('usuario', '').strip()
     senha_input = data.get('senha', '')
-    tipo_acesso = data.get('tipo_acesso', 'user')
 
     if not usuario_raw or not senha_input:
         return jsonify({"sucesso": False, "mensagem": "Preencha todos os campos!"}), 400
@@ -288,69 +283,20 @@ def login_senha():
 
     conn = sqlite3.connect(DB_FILE)
     cursor = conn.cursor()
-    cursor.execute("SELECT nome, role FROM usuarios WHERE (nome = ? OR nome = ?) AND senha = ?", 
-                   (usuario_input, usuario_raw, senha_input))
+    cursor.execute(
+        "SELECT nome, role FROM usuarios WHERE (nome = ? OR nome = ?) AND senha = ?", 
+        (usuario_input, usuario_raw, senha_input)
+    )
     user = cursor.fetchone()
     conn.close()
 
     if not user:
         return jsonify({"sucesso": False, "mensagem": "Usuário ou senha inválidos!"}), 401
 
-    nome_db, role_db = user[0], user[1]
-
-    if tipo_acesso == 'admin' and role_db != 'admin':
-        return jsonify({
-            "sucesso": False, 
-            "mensagem": "Acesso negado: esta conta não possui privilégios de Administrador."
-        }), 403
-
-    session['usuario'] = nome_db
-    session['role'] = role_db
+    session['usuario'] = user[0]
+    session['role'] = user[1]
 
     return jsonify({"sucesso": True, "redirect": url_for('index')})
-
-
-@app.route('/api/cadastrar_usuario', methods=['POST'])
-def cadastrar_usuario():
-    data = request.json or {}
-    usuario_raw = data.get('usuario', '').strip()
-    senha = data.get('senha', '')
-    confirmar_senha = data.get('confirmar_senha', '')
-
-    if not usuario_raw or not senha or not confirmar_senha:
-        return jsonify({"sucesso": False, "mensagem": "Preencha todos os campos obrigatórios!"}), 400
-
-    if len(usuario_raw) < 3:
-        return jsonify({"sucesso": False, "mensagem": "O nome de usuário deve ter pelo menos 3 caracteres!"}), 400
-
-    if len(senha) < 4:
-        return jsonify({"sucesso": False, "mensagem": "A senha deve ter pelo menos 4 caracteres!"}), 400
-
-    if senha != confirmar_senha:
-        return jsonify({"sucesso": False, "mensagem": "As senhas digitadas não coincidem!"}), 400
-
-    nome_norm = normalizar_nome(usuario_raw)
-    pasta_usuario = os.path.join(DATASET_DIR, nome_norm)
-
-    conn = sqlite3.connect(DB_FILE)
-    cursor = conn.cursor()
-
-    cursor.execute("SELECT COUNT(*) FROM usuarios WHERE nome = ? OR nome = ?", (nome_norm, usuario_raw))
-    if cursor.fetchone()[0] > 0:
-        conn.close()
-        return jsonify({"sucesso": False, "mensagem": "Este nome de usuário já está cadastrado!"}), 400
-
-    try:
-        os.makedirs(pasta_usuario, exist_ok=True)
-        cursor.execute("INSERT INTO usuarios (nome, pasta, senha, role) VALUES (?, ?, ?, 'user')", 
-                       (nome_norm, pasta_usuario, senha))
-        conn.commit()
-        conn.close()
-
-        return jsonify({"sucesso": True, "mensagem": "Cadastro realizado com sucesso! Faça login para continuar."})
-    except Exception as e:
-        conn.close()
-        return jsonify({"sucesso": False, "mensagem": f"Erro ao cadastrar usuário: {str(e)}"}), 500
 
 
 @app.route('/logout')
@@ -359,13 +305,21 @@ def logout():
     return redirect(url_for('login'))
 
 
-# --- ROTAS PROTEGIDAS DA APLICAÇÃO ---
+# --- ROTA PRINCIPAL DA APLICAÇÃO ---
 
 @app.route('/')
 @login_required
 def index():
-    return render_template('index.html', usuario=session.get('usuario'), role=session.get('role'))
+    user_role = session.get('role', 'user')
+    return render_template(
+        'index.html', 
+        usuario=session.get('usuario'), 
+        role=user_role,
+        body_class='user-role' if user_role != 'admin' else ''
+    )
 
+
+# --- ROTAS DA API INTERNA ---
 
 @app.route('/api/dados', methods=['GET'])
 @login_required
@@ -381,14 +335,15 @@ def obter_dados():
         qtd_fotos = cursor.fetchone()[0]
         usuarios.append([u[0], u[1], u[2], qtd_fotos])
 
-    cursor.execute("SELECT id, nome, datetime(data_hora, 'localtime') FROM acessos ORDER BY id DESC LIMIT 10")
+    cursor.execute("SELECT id, nome, datetime(data_hora, 'localtime') FROM acessos ORDER BY id DESC LIMIT 50")
     acessos = cursor.fetchall()
     conn.close()
+
     return jsonify({"usuarios": usuarios, "acessos": acessos})
 
 
 @app.route('/api/cadastrar', methods=['POST'])
-@login_required
+@admin_required
 def cadastrar():
     data = request.json or {}
     resultado = processar_captura(data.get('nome'), data.get('image'), permitir_criar_usuario=True)
@@ -397,7 +352,7 @@ def cadastrar():
 
 
 @app.route('/api/adicionar_foto', methods=['POST'])
-@login_required
+@admin_required
 def adicionar_foto():
     data = request.json or {}
     resultado = processar_captura(data.get('nome'), data.get('image'), permitir_criar_usuario=False)
@@ -411,7 +366,7 @@ def reconhecer():
     data = request.json or {}
     frame = base64_to_cv2(data.get('image'))
     if frame is None:
-        return jsonify({"image": None, "erro": "Imagem invalida."}), 400
+        return jsonify({"image": None, "erro": "Imagem inválida."}), 400
 
     nomes_conhecidos = ENCODINGS_CACHE["nomes"]
     encodings_conhecidos = ENCODINGS_CACHE["vecs"]
@@ -455,7 +410,7 @@ def reconhecer():
 
 
 @app.route('/api/renomear', methods=['POST'])
-@login_required
+@admin_required
 def renomear():
     data = request.json or {}
     nome_antigo = normalizar_nome(data.get('antigo_nome'))
@@ -485,17 +440,17 @@ def renomear():
     conn.close()
 
     recarregar_cache_encodings()
-    return jsonify({"mensagem": f"Nome alterado de '{nome_antigo}' para '{novo_nome}' no faces.db."})
+    return jsonify({"mensagem": f"Nome alterado com sucesso para '{novo_nome}'."})
 
 
 @app.route('/api/deletar', methods=['POST'])
-@login_required
+@admin_required
 def deletar():
     data = request.json or {}
     nome = normalizar_nome(data.get('nome'))
 
     if not nome:
-        return jsonify({"mensagem": "Nome invalido!"}), 400
+        return jsonify({"mensagem": "Nome inválido!"}), 400
 
     conn = sqlite3.connect(DB_FILE)
     cursor = conn.cursor()
@@ -510,7 +465,7 @@ def deletar():
         shutil.rmtree(pasta_usuario)
 
     recarregar_cache_encodings()
-    return jsonify({"status": "sucesso"})
+    return jsonify({"status": "sucesso", "mensagem": f"Usuário '{nome}' removido com sucesso."})
 
 
 if __name__ == '__main__':
