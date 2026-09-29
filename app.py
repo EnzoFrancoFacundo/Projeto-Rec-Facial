@@ -90,7 +90,7 @@ def init_db():
         )
     """)
 
-    # Usuário admin padrão
+    # Usuário admin padrão - Insere ou força atualização de permissão
     cursor.execute("SELECT COUNT(*) FROM usuarios WHERE nome = 'admin'")
     if cursor.fetchone()[0] == 0:
         pasta_admin = os.path.join(DATASET_DIR, "admin")
@@ -99,6 +99,8 @@ def init_db():
             "INSERT INTO usuarios (nome, pasta, senha, role) VALUES ('admin', ?, 'admin123', 'admin')",
             (pasta_admin,)
         )
+    else:
+        cursor.execute("UPDATE usuarios SET role = 'admin' WHERE nome = 'admin'")
 
     conn.commit()
     conn.close()
@@ -332,18 +334,28 @@ def cadastrar_usuario():
     try:
         conn = sqlite3.connect(DB_FILE)
         cursor = conn.cursor()
-        cursor.execute(
-            "INSERT INTO usuarios (nome, pasta, senha, role) VALUES (?, ?, ?, ?)",
-            (usuario_norm, pasta_usuario, senha, role)
-        )
+
+        # Verifica se o usuário já existe para decidir entre INSERT e UPDATE
+        cursor.execute("SELECT id FROM usuarios WHERE nome = ?", (usuario_norm,))
+        usuario_existente = cursor.fetchone()
+
+        if usuario_existente:
+            cursor.execute(
+                "UPDATE usuarios SET senha = ?, role = ?, pasta = ? WHERE nome = ?",
+                (senha, role, pasta_usuario, usuario_norm)
+            )
+        else:
+            cursor.execute(
+                "INSERT INTO usuarios (nome, pasta, senha, role) VALUES (?, ?, ?, ?)",
+                (usuario_norm, pasta_usuario, senha, role)
+            )
+
         conn.commit()
         conn.close()
-    except sqlite3.IntegrityError:
-        return jsonify({"sucesso": False, "mensagem": "Usuário já existente!"}), 400
     except Exception as e:
         return jsonify({"sucesso": False, "mensagem": f"Erro no banco de dados: {str(e)}"}), 500
 
-    return jsonify({"sucesso": True, "mensagem": f"Conta de {role.capitalize()} criada com sucesso!"})
+    return jsonify({"sucesso": True, "mensagem": f"Conta de {role.capitalize()} salva com sucesso!"})
 
 
 @app.route('/logout')
