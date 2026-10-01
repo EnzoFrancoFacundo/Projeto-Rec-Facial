@@ -6,6 +6,7 @@ import re
 import unicodedata
 import warnings
 import shutil
+import time
 import numpy as np
 import face_recognition
 from flask import Flask, render_template, request, jsonify, session, redirect, url_for
@@ -42,8 +43,10 @@ face_cascade = cv2.CascadeClassifier(XML_LOCAL)
 
 os.makedirs(DATASET_DIR, exist_ok=True)
 os.makedirs(STATIC_DIR, exist_ok=True)
+os.makedirs(TEMPLATES_DIR, exist_ok=True)
 
 ENCODINGS_CACHE = {"nomes": [], "vecs": []}
+ULTIMOS_ACESSOS = {}
 
 
 def normalizar_nome(nome):
@@ -90,7 +93,7 @@ def init_db():
         )
     """)
 
-    # Usuário admin padrão - Insere ou força atualização de permissão
+    # Usuário admin padrão
     cursor.execute("SELECT COUNT(*) FROM usuarios WHERE nome = 'admin'")
     if cursor.fetchone()[0] == 0:
         pasta_admin = os.path.join(DATASET_DIR, "admin")
@@ -184,6 +187,12 @@ def desenhar_marcador_opencv(frame, boxes, rotulo="ROSTO DETECTADO"):
 
 
 def registrar_acesso(nome):
+    agora = time.time()
+    # Evita gravações redundantes consecutivas no banco para o mesmo usuário num intervalo curto (10s)
+    if nome in ULTIMOS_ACESSOS and (agora - ULTIMOS_ACESSOS[nome]) < 10:
+        return
+    ULTIMOS_ACESSOS[nome] = agora
+
     conn = sqlite3.connect(DB_FILE)
     cursor = conn.cursor()
     cursor.execute("INSERT INTO acessos (nome) VALUES (?)", (nome,))
@@ -250,8 +259,7 @@ def processar_captura(nome_raw, img_b64, permitir_criar_usuario):
     conn.commit()
     conn.close()
 
-    if proximo_num >= MINIMO_FOTOS_REQUERIDO:
-        recarregar_cache_encodings()
+    recarregar_cache_encodings()
 
     boxes = [(top * 2, right * 2, bottom * 2, left * 2) for (top, right, bottom, left) in boxes_small]
     rotulo = f"CAPTURADA ({proximo_num}/{MINIMO_FOTOS_REQUERIDO})"
@@ -335,7 +343,6 @@ def cadastrar_usuario():
         conn = sqlite3.connect(DB_FILE)
         cursor = conn.cursor()
 
-        # Verifica se o usuário já existe para decidir entre INSERT e UPDATE
         cursor.execute("SELECT id FROM usuarios WHERE nome = ?", (usuario_norm,))
         usuario_existente = cursor.fetchone()
 
