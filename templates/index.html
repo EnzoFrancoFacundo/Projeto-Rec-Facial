@@ -138,6 +138,28 @@
         .theme-toggle-btn { background-color: transparent; border: 1px solid var(--border-card); color: var(--text-main); width: 40px; height: 40px; border-radius: 50%; cursor: pointer; font-size: 1.2rem; display: flex; align-items: center; justify-content: center; transition: all 0.2s ease; }
         .theme-toggle-btn:hover { background-color: var(--border-card); }
 
+        /* Botão Sair */
+        .btn-logout {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            padding: 8px 14px;
+            background-color: #dc2626;
+            color: #ffffff;
+            border: none;
+            border-radius: 6px;
+            font-size: 0.85rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background-color 0.2s, transform 0.1s;
+        }
+        .btn-logout:hover {
+            background-color: #b91c1c;
+        }
+        .btn-logout:active {
+            transform: scale(0.96);
+        }
+
         /* Modal Pop-up de Autenticação */
         .modal-overlay {
             position: fixed;
@@ -444,11 +466,18 @@
             </div>
             
             <div class="header-controls">
-                <select id="role-select" class="role-selector" onchange="alternarPerfil(this.value)">
-                    <option value="admin">Visão: Administrador</option>
-                    <option value="user" selected>Visão: Usuário Comum</option>
-                </select>
+                
                 <button id="btn-theme-toggle" class="theme-toggle-btn" onclick="alternarTema()" title="Alternar Tema">&#9728;</button>
+                
+                <!-- Botão de Sair -->
+                <button id="btn-logout" class="btn-logout" onclick="fazerLogout()" title="Sair do Sistema">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
+                        <polyline points="16 17 21 12 16 7"></polyline>
+                        <line x1="21" y1="12" x2="9" y2="12"></line>
+                    </svg>
+                    Sair
+                </button>
             </div>
         </div>
 
@@ -619,6 +648,13 @@
         let perfilAtual = 'user';
 
         document.body.classList.add('user-role');
+
+        function fazerLogout() {
+            // Desliga todas as câmeras antes de sair
+            desligarTodasCameras();
+            // Redireciona para a página de login
+            window.location.href = "{{ url_for('login') }}";
+        }
 
         function alternarPerfil(role) {
             const roleSelect = document.getElementById('role-select');
