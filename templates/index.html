@@ -373,7 +373,7 @@
             
             <div class="header-controls">
                 <div class="user-badge">
-                    <span>👤 {{ usuario }}</span>
+                    <span>{{ usuario }}</span>
                     <span class="role-tag {{ 'admin-tag' if role == 'admin' else 'user-tag' }}">
                         {{ 'Admin' if role == 'admin' else 'Usuário' }}
                     </span>
@@ -434,7 +434,7 @@
             </div>
 
             <div id="cadastrar" class="section">
-                <h2>Cadastro Automático em Sequência (Meta: 50 Fotos)</h2>
+                <h2>Cadastro Automático em Sequência (Meta: 30 Fotos)</h2>
                 <br>
                 <div class="form-group">
                     <label>Nome do Usuário:</label>
@@ -484,7 +484,7 @@
                             <div class="form-group">
                                 <label>Selecione o Usuário:</label>
                                 <select id="select-add-foto" onchange="atualizarContadorFotos()"></select>
-                                <div id="badge-contador" class="badge-fotos">Fotos: 0 / 50</div>
+                                <div id="badge-contador" class="badge-fotos">Fotos: 0 / 30</div>
                             </div>
                             <div class="camera-container" style="height: 220px;">
                                 <div id="flash-add" class="flash-overlay"></div>
@@ -515,7 +515,7 @@
                             <th>ID</th>
                             <th>Nome</th>
                             <th>Total de Fotos</th>
-                            <th>Status Mínimo (50 Fotos)</th>
+                            <th>Status Mínimo (30 Fotos)</th>
                             <th>Ações</th>
                         </tr>
                     </thead>
@@ -706,10 +706,10 @@
             }
 
             tbodyUsuarios.innerHTML = lista.map(u => {
-                const atingeMinimo = u[3] >= 50;
+                const atingeMinimo = u[3] >= 30;
                 const statusBadge = atingeMinimo 
-                    ? `<span class="badge-fotos badge-ok">Pronto (${u[3]}/50)</span>` 
-                    : `<span class="badge-fotos badge-alerta">Pendente (${u[3]}/50)</span>`;
+                    ? `<span class="badge-fotos badge-ok">Pronto (${u[3]}/30)</span>` 
+                    : `<span class="badge-fotos badge-alerta">Pendente (${u[3]}/30)</span>`;
                 return `<tr><td>${u[0]}</td><td>${u[1]}</td><td>${u[3]} foto(s)</td><td>${statusBadge}</td>
                 <td><button class="btn btn-danger" onclick="deletarUsuario('${u[1]}')">Excluir</button></td></tr>`;
             }).join('');
@@ -742,8 +742,8 @@
             const qtd = usr ? usr[3] : 0;
             const badge = document.getElementById('badge-contador');
             if (badge) {
-                badge.innerText = `Fotos no faces.db: ${qtd} / 50`;
-                badge.className = qtd >= 50 ? "badge-fotos badge-ok" : "badge-fotos badge-alerta";
+                badge.innerText = `Fotos no faces.db: ${qtd} / 30`;
+                badge.className = qtd >= 30 ? "badge-fotos badge-ok" : "badge-fotos badge-alerta";
             }
         }
 
@@ -784,7 +784,7 @@
                     document.getElementById('status-rec').innerText = "Erro de conexão, tentando novamente...";
                 }
 
-                await new Promise(r => setTimeout(r, 15));
+                await new Promise(r => setTimeout(r, 0));
             }
         }
 
@@ -835,15 +835,15 @@
                     if (res.ok) {
                         dispararFlash('flash-cad');
                         const total = data.total;
-                        const pct = Math.min(100, Math.round((total / 50) * 100));
+                        const pct = Math.min(100, Math.round((total / 30) * 100));
 
                         const barra = document.getElementById('barra-progresso');
                         barra.style.width = pct + "%";
-                        barra.innerText = `${pct}% (${total}/50)`;
+                        barra.innerText = `${pct}% (${total}/30)`;
 
                         document.getElementById('msg-cadastro').innerText = data.mensagem;
-                        if (total >= 50) {
-                            document.getElementById('msg-cadastro').innerText = "Cadastro completo! 50 fotos registradas com sucesso.";
+                        if (total >= 30) {
+                            document.getElementById('msg-cadastro').innerText = "Cadastro completo! 30 fotos registradas com sucesso.";
                             pararSequenciaCadastro();
                             break;
                         }
@@ -855,7 +855,7 @@
                     document.getElementById('msg-cadastro').innerText = "Erro de conexão durante a captura.";
                 }
 
-                await new Promise(r => setTimeout(r, 150));
+                await new Promise(r => setTimeout(r, 20));
             }
             carregarDados();
         }
@@ -910,7 +910,7 @@
                     console.error("Falha ao adicionar foto:", e);
                 }
 
-                await new Promise(r => setTimeout(r, 150));
+                await new Promise(r => setTimeout(r, 20));
             }
             carregarDados();
         }

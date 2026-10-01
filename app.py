@@ -31,7 +31,7 @@ app.config['SESSION_PERMANENT'] = False
 
 DATASET_DIR = os.path.join(BASE_DIR, "dataset")
 DB_FILE = os.path.join(BASE_DIR, "faces.db")
-MINIMO_FOTOS_REQUERIDO = 50
+MINIMO_FOTOS_REQUERIDO = 30
 TOLERANCIA = 0.48
 
 # Haar Cascade Fallback
@@ -45,7 +45,7 @@ os.makedirs(DATASET_DIR, exist_ok=True)
 os.makedirs(STATIC_DIR, exist_ok=True)
 os.makedirs(TEMPLATES_DIR, exist_ok=True)
 
-ENCODINGS_CACHE = {"nomes": [], "vecs": []}
+ENCODINGS_CACHE = {"nomes": [], "vecs": [], "matriz": None}
 ULTIMOS_ACESSOS = {}
 
 
@@ -125,6 +125,18 @@ def recarregar_cache_encodings():
 
     ENCODINGS_CACHE["nomes"] = nomes
     ENCODINGS_CACHE["vecs"] = vecs
+    ENCODINGS_CACHE["matriz"] = np.array(vecs, dtype=np.float64) if vecs else None
+
+
+def adicionar_ao_cache(nome, vec):
+    # Adiciona só o novo encoding ao cache, sem reler o banco inteiro a cada foto
+    vec = np.asarray(vec, dtype=np.float64)
+    ENCODINGS_CACHE["nomes"].append(nome)
+    ENCODINGS_CACHE["vecs"].append(vec)
+    if ENCODINGS_CACHE["matriz"] is None:
+        ENCODINGS_CACHE["matriz"] = vec.reshape(1, -1)
+    else:
+        ENCODINGS_CACHE["matriz"] = np.vstack([ENCODINGS_CACHE["matriz"], vec])
 
 
 init_db()
@@ -259,7 +271,7 @@ def processar_captura(nome_raw, img_b64, permitir_criar_usuario):
     conn.commit()
     conn.close()
 
-    recarregar_cache_encodings()
+    adicionar_ao_cache(nome, encodings[0])
 
     boxes = [(top * 2, right * 2, bottom * 2, left * 2) for (top, right, bottom, left) in boxes_small]
     rotulo = f"CAPTURADA ({proximo_num}/{MINIMO_FOTOS_REQUERIDO})"
@@ -435,16 +447,16 @@ def reconhecer():
         return jsonify({"image": None, "erro": "Imagem inválida."}), 400
 
     nomes_conhecidos = ENCODINGS_CACHE["nomes"]
-    encodings_conhecidos = ENCODINGS_CACHE["vecs"]
+    matriz_conhecidos = ENCODINGS_CACHE["matriz"]
 
-    if not encodings_conhecidos:
+    if matriz_conhecidos is None or len(matriz_conhecidos) == 0:
         return jsonify({"image": cv2_to_base64(frame), "reconhecidos": []})
 
     small_frame = cv2.resize(frame, (0, 0), fx=0.5, fy=0.5)
     gray_small = cv2.cvtColor(small_frame, cv2.COLOR_BGR2GRAY)
 
     faces = face_cascade.detectMultiScale(
-        gray_small, scaleFactor=1.1, minNeighbors=3, minSize=(30, 30)
+        gray_small, scaleFactor=1.2, minNeighbors=3, minSize=(30, 30)
     )
 
     nomes_reconhecidos = []
@@ -460,7 +472,7 @@ def reconhecer():
             nome = "Desconhecido"
             cor = (0, 0, 255)
 
-            distancias = face_recognition.face_distance(encodings_conhecidos, encoding_atual)
+            distancias = np.linalg.norm(matriz_conhecidos - encoding_atual, axis=1)
             if len(distancias) > 0:
                 melhor_indice = int(np.argmin(distancias))
                 if distancias[melhor_indice] <= TOLERANCIA:
