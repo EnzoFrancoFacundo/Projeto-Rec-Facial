@@ -25,7 +25,6 @@ app = Flask(
     template_folder=TEMPLATES_DIR,
 )
 
-# Chave secreta e configurações de sessão
 app.secret_key = "sua_chave_secreta_super_segura_aqui"
 app.config['SESSION_PERMANENT'] = False
 
@@ -34,7 +33,6 @@ DB_FILE = os.path.join(BASE_DIR, "faces.db")
 MINIMO_FOTOS_REQUERIDO = 30
 TOLERANCIA = 0.48
 
-# Haar Cascade Fallback
 XML_LOCAL = os.path.join(BASE_DIR, "haarcascade_frontalface_default.xml")
 if not os.path.exists(XML_LOCAL):
     XML_LOCAL = os.path.join(cv2.data.haarcascades, "haarcascade_frontalface_default.xml")
@@ -57,8 +55,15 @@ def normalizar_nome(nome):
     return re.sub(r'[^a-z0-9_]', '', nome_limpo)
 
 
-def init_db():
+def get_db():
     conn = sqlite3.connect(DB_FILE)
+    conn.execute("PRAGMA journal_mode=WAL;")
+    conn.execute("PRAGMA synchronous=NORMAL;")
+    return conn
+
+
+def init_db():
+    conn = get_db()
     cursor = conn.cursor()
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS usuarios (
@@ -93,7 +98,10 @@ def init_db():
         )
     """)
 
-    # Usuário admin padrão
+    # Índices para otimizar pesquisas
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_encodings_nome ON encodings(nome);")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_acessos_nome ON acessos(nome);")
+
     cursor.execute("SELECT COUNT(*) FROM usuarios WHERE nome = 'admin'")
     if cursor.fetchone()[0] == 0:
         pasta_admin = os.path.join(DATASET_DIR, "admin")
@@ -110,7 +118,7 @@ def init_db():
 
 
 def recarregar_cache_encodings():
-    conn = sqlite3.connect(DB_FILE)
+    conn = get_db()
     cursor = conn.cursor()
     cursor.execute("SELECT nome, encoding FROM encodings")
     rows = cursor.fetchall()
@@ -129,7 +137,6 @@ def recarregar_cache_encodings():
 
 
 def adicionar_ao_cache(nome, vec):
-    # Adiciona só o novo encoding ao cache, sem reler o banco inteiro a cada foto
     vec = np.asarray(vec, dtype=np.float64)
     ENCODINGS_CACHE["nomes"].append(nome)
     ENCODINGS_CACHE["vecs"].append(vec)
@@ -142,8 +149,6 @@ def adicionar_ao_cache(nome, vec):
 init_db()
 recarregar_cache_encodings()
 
-
-# --- DECORADORES DE SEGURANÇA ---
 
 def login_required(f):
     @wraps(f)
@@ -163,13 +168,12 @@ def admin_required(f):
     return decorated_function
 
 
-# --- AUXILIARES DE PROCESSAMENTO DE IMAGEM ---
-
 def base64_to_cv2(b64_string):
     try:
-        if not b64_string or ',' not in b64_string:
+        if not b64_string:
             return None
-        encoded_data = b64_string.split(',')[1]
+        idx = b64_string.find(',')
+        encoded_data = b64_string[idx + 1:] if idx != -1 else b64_string
         nparr = np.frombuffer(base64.b64decode(encoded_data), np.uint8)
         return cv2.imdecode(nparr, cv2.IMREAD_COLOR)
     except Exception:
@@ -177,35 +181,18 @@ def base64_to_cv2(b64_string):
 
 
 def cv2_to_base64(img):
-    _, buffer = cv2.imencode('.jpg', img, [cv2.IMWRITE_JPEG_QUALITY, 40])
+    _, buffer = cv2.imencode('.jpg', img, [cv2.IMWRITE_JPEG_QUALITY, 30])
     b64 = base64.b64encode(buffer).decode('utf-8')
     return f"data:image/jpeg;base64,{b64}"
 
 
-def desenhar_marcador_opencv(frame, boxes, rotulo="ROSTO DETECTADO"):
-    img = frame.copy()
-    for (top, right, bottom, left) in boxes:
-        cv2.rectangle(img, (left, top), (right, bottom), (0, 255, 0), 2)
-
-        d = 15
-        cv2.line(img, (left, top), (left + d, top), (0, 255, 255), 3)
-        cv2.line(img, (left, top), (left, top + d), (0, 255, 255), 3)
-        cv2.line(img, (right, top), (right - d, top), (0, 255, 255), 3)
-        cv2.line(img, (right, top), (right, top + d), (0, 255, 255), 3)
-
-        cv2.rectangle(img, (left, top - 25), (right, top), (0, 255, 0), cv2.FILLED)
-        cv2.putText(img, rotulo, (left + 5, top - 7), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 0, 0), 1)
-    return img
-
-
 def registrar_acesso(nome):
     agora = time.time()
-    # Evita gravações redundantes consecutivas no banco para o mesmo usuário num intervalo curto (10s)
     if nome in ULTIMOS_ACESSOS and (agora - ULTIMOS_ACESSOS[nome]) < 10:
         return
     ULTIMOS_ACESSOS[nome] = agora
 
-    conn = sqlite3.connect(DB_FILE)
+    conn = get_db()
     cursor = conn.cursor()
     cursor.execute("INSERT INTO acessos (nome) VALUES (?)", (nome,))
     conn.commit()
@@ -224,7 +211,7 @@ def processar_captura(nome_raw, img_b64, permitir_criar_usuario):
     pasta_destino = os.path.join(DATASET_DIR, nome)
     os.makedirs(pasta_destino, exist_ok=True)
 
-    small_frame = cv2.resize(frame, (0, 0), fx=0.5, fy=0.5)
+    small_frame = cv2.resize(frame, (0, 0), fx=0.25, fy=0.25)
     rgb_small = cv2.cvtColor(small_frame, cv2.COLOR_BGR2RGB)
     
     boxes_small = face_recognition.face_locations(rgb_small, model="hog")
@@ -236,7 +223,7 @@ def processar_captura(nome_raw, img_b64, permitir_criar_usuario):
             "preview": cv2_to_base64(frame),
         }
 
-    encodings = face_recognition.face_encodings(rgb_small, boxes_small)
+    encodings = face_recognition.face_encodings(rgb_small, boxes_small, num_jitters=1)
 
     if not encodings:
         return {
@@ -245,7 +232,7 @@ def processar_captura(nome_raw, img_b64, permitir_criar_usuario):
             "preview": cv2_to_base64(frame),
         }
 
-    conn = sqlite3.connect(DB_FILE)
+    conn = get_db()
     cursor = conn.cursor()
 
     if not permitir_criar_usuario:
@@ -273,19 +260,15 @@ def processar_captura(nome_raw, img_b64, permitir_criar_usuario):
 
     adicionar_ao_cache(nome, encodings[0])
 
-    boxes = [(top * 2, right * 2, bottom * 2, left * 2) for (top, right, bottom, left) in boxes_small]
-    rotulo = f"CAPTURADA ({proximo_num}/{MINIMO_FOTOS_REQUERIDO})"
-    frame_marcado = desenhar_marcador_opencv(frame, boxes, rotulo)
-
+    boxes = [(top * 4, right * 4, bottom * 4, left * 4) for (top, right, bottom, left) in boxes_small]
+    
     return {
         "status": 200,
         "mensagem": f"Capturada foto #{proximo_num}",
         "total": proximo_num,
-        "preview": cv2_to_base64(frame_marcado),
+        "boxes": boxes
     }
 
-
-# --- ROTAS DE AUTENTICAÇÃO ---
 
 @app.route('/login', methods=['GET'])
 def login():
@@ -304,7 +287,7 @@ def login_senha():
 
     usuario_input = normalizar_nome(usuario_raw)
 
-    conn = sqlite3.connect(DB_FILE)
+    conn = get_db()
     cursor = conn.cursor()
     cursor.execute(
         "SELECT nome, role FROM usuarios WHERE (nome = ? OR nome = ?) AND senha = ?", 
@@ -352,7 +335,7 @@ def cadastrar_usuario():
     os.makedirs(pasta_usuario, exist_ok=True)
 
     try:
-        conn = sqlite3.connect(DB_FILE)
+        conn = get_db()
         cursor = conn.cursor()
 
         cursor.execute("SELECT id FROM usuarios WHERE nome = ?", (usuario_norm,))
@@ -383,8 +366,6 @@ def logout():
     return redirect(url_for('login'))
 
 
-# --- ROTA PRINCIPAL DA APLICAÇÃO ---
-
 @app.route('/')
 @login_required
 def index():
@@ -397,12 +378,10 @@ def index():
     )
 
 
-# --- ROTAS DA API INTERNA ---
-
 @app.route('/api/dados', methods=['GET'])
 @login_required
 def obter_dados():
-    conn = sqlite3.connect(DB_FILE)
+    conn = get_db()
     cursor = conn.cursor()
     cursor.execute("SELECT id, nome, pasta FROM usuarios")
     usuarios_db = cursor.fetchall()
@@ -444,47 +423,48 @@ def reconhecer():
     data = request.json or {}
     frame = base64_to_cv2(data.get('image'))
     if frame is None:
-        return jsonify({"image": None, "erro": "Imagem inválida."}), 400
+        return jsonify({"reconhecidos": [], "erro": "Imagem inválida."}), 400
 
     nomes_conhecidos = ENCODINGS_CACHE["nomes"]
     matriz_conhecidos = ENCODINGS_CACHE["matriz"]
 
     if matriz_conhecidos is None or len(matriz_conhecidos) == 0:
-        return jsonify({"image": cv2_to_base64(frame), "reconhecidos": []})
+        return jsonify({"reconhecidos": []})
 
-    small_frame = cv2.resize(frame, (0, 0), fx=0.5, fy=0.5)
+    # Reduz para 25% da escala para deteção ultrarrápida
+    small_frame = cv2.resize(frame, (0, 0), fx=0.25, fy=0.25)
     gray_small = cv2.cvtColor(small_frame, cv2.COLOR_BGR2GRAY)
 
     faces = face_cascade.detectMultiScale(
-        gray_small, scaleFactor=1.2, minNeighbors=3, minSize=(30, 30)
+        gray_small, scaleFactor=1.2, minNeighbors=4, minSize=(20, 20)
     )
 
-    nomes_reconhecidos = []
+    resultados = []
 
     if len(faces) > 0:
         boxes_small = [(y, x + w, y + h, x) for (x, y, w, h) in faces]
         rgb_small = cv2.cvtColor(small_frame, cv2.COLOR_BGR2RGB)
-        encodings_frame = face_recognition.face_encodings(rgb_small, boxes_small)
+        encodings_frame = face_recognition.face_encodings(rgb_small, boxes_small, num_jitters=1)
 
         for (top, right, bottom, left), encoding_atual in zip(boxes_small, encodings_frame):
-            top_full, right_full, bottom_full, left_full = top * 2, right * 2, bottom * 2, left * 2
+            top_full, right_full, bottom_full, left_full = top * 4, right * 4, bottom * 4, left * 4
 
             nome = "Desconhecido"
-            cor = (0, 0, 255)
-
             distancias = np.linalg.norm(matriz_conhecidos - encoding_atual, axis=1)
+            
             if len(distancias) > 0:
                 melhor_indice = int(np.argmin(distancias))
                 if distancias[melhor_indice] <= TOLERANCIA:
                     nome = nomes_conhecidos[melhor_indice]
-                    cor = (0, 255, 0)
                     registrar_acesso(nome)
-                    nomes_reconhecidos.append(nome)
 
-            cv2.rectangle(frame, (left_full, top_full), (right_full, bottom_full), cor, 2)
-            cv2.putText(frame, nome, (left_full, top_full - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.6, cor, 2)
+            resultados.append({
+                "nome": nome,
+                "box": [top_full, right_full, bottom_full, left_full]
+            })
 
-    return jsonify({"image": cv2_to_base64(frame), "reconhecidos": nomes_reconhecidos})
+    # Resposta leve sem re-envio de imagem codificada
+    return jsonify({"reconhecidos": resultados})
 
 
 @app.route('/api/renomear', methods=['POST'])
@@ -509,7 +489,7 @@ def renomear():
         except Exception as e:
             return jsonify({"mensagem": f"Erro ao renomear pasta: {str(e)}"}), 500
 
-    conn = sqlite3.connect(DB_FILE)
+    conn = get_db()
     cursor = conn.cursor()
     cursor.execute("UPDATE usuarios SET nome = ?, pasta = ? WHERE nome = ?", (novo_nome, caminho_novo, nome_antigo))
     cursor.execute("UPDATE encodings SET nome = ? WHERE nome = ?", (novo_nome, nome_antigo))
@@ -530,7 +510,7 @@ def deletar():
     if not nome:
         return jsonify({"mensagem": "Nome inválido!"}), 400
 
-    conn = sqlite3.connect(DB_FILE)
+    conn = get_db()
     cursor = conn.cursor()
     cursor.execute("DELETE FROM usuarios WHERE nome = ?", (nome,))
     cursor.execute("DELETE FROM encodings WHERE nome = ?", (nome,))
@@ -547,4 +527,4 @@ def deletar():
 
 
 if __name__ == '__main__':
-    app.run(debug=True, host='127.0.0.1', port=5000, threaded=True)
+    app.run(debug=False, host='127.0.0.1', port=5000, threaded=True)
