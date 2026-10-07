@@ -1,7 +1,9 @@
-Sistema de Reconhecimento Facial em Python
+# Sistema de Reconhecimento Facial em Python 
 Este projeto consiste em uma aplicação para cadastro, treinamento e reconhecimento facial em tempo real utilizando Python e SQLite.
 
 Pré-requisitos e Dependências
+
+(Parte Backend local)
 
 1. Ambiente Python
 Versão recomendada: Python 3.12 (compatível com versões anteriores, desde que ofereçam suporte às bibliotecas do projeto).
@@ -51,14 +53,7 @@ Confirme o início da sessão de fotos na janela que será exibida.
 
 Dica: Varie a posição, a inclinação e a expressão do rosto durante as fotos para aumentar a precisão do reconhecimento.
 
-Passo 3: Treinamento do Modelo
-Processa as imagens capturadas e treina o modelo para reconhecer os perfis cadastrados.
-
-Bash
-python treinar.py
-Instruções: O script listará os usuários cadastrados no banco de dados. Selecione o perfil desejado para iniciar o processamento dos dados faciais.
-
-Passo 4: Reconhecimento Facial em Tempo Real
+Passo 3: Reconhecimento Facial em Tempo Real
 Inicia a verificação via câmera utilizando os dados treinados.
 
 Bash
@@ -68,3 +63,80 @@ Resultado:
 Face reconhecida: Exibe um retângulo verde ao redor do rosto acompanhado do nome cadastrado.
 
 Face não reconhecida: Exibe o rótulo "Desconhecido".
+
+(Parte WEB)
+
+# Aplicação Web de Reconhecimento Facial
+
+Uma aplicação web baseada em Flask para deteção e reconhecimento facial utilizando OpenCV e Haar Cascades.
+
+📁 Estrutura do Projeto
+
+web/
+├── app.py                             # Lógica principal da aplicação Flask
+├── faces.db                           # Base de dados com codificação facial e dados de utilizadores
+├── trainer.yml                        # Ficheiro do modelo treinado para reconhecimento facial
+├── haarcascade_frontalface_default.xml # Classificador Haar Cascade do OpenCV para deteção de rostos
+├── dataset/                           # Diretório com os conjuntos de dados de rostos dos utilizadores
+│   └── Enzo/                          # Exemplo de dataset para o utilizador "Enzo"
+│       ├── 0.jpg
+│       ├── 1.jpg
+│       └── ...
+├── static/                            # Ficheiros estáticos (estilos, imagens, ícones)
+│   └── logo.ico
+└── templates/                         # Modelos HTML para as visualizações da aplicação
+├── index.html                     # Painel principal / página inicial
+└── login.html                     # Página de autenticação de utilizadores
+
+🚀 Funcionalidades
+
+Deteção Facial: Deteta rostos humanos em imagens ou transmissões de vídeo utilizando OpenCV Haar Cascades (haarcascade_frontalface_default.xml).
+
+Modelo de Reconhecimento Facial: Reconhece utilizadores registados através do modelo treinado (trainer.yml).
+
+Gestão de Dataset: Organiza imagens faciais individuais em pastas estruturadas por utilizador dentro de dataset/.
+
+Integração com Base de Dados: Armazena perfis de utilizadores e registos de deteção utilizando SQLite (faces.db).
+
+Painel Web: Interface web interativa construída com Flask e modelos HTML.
+
+🛠️ Pré-requisitos
+
+Certifique-se de que tem o seguinte instalado no seu computador:
+
+Python: 3.8+
+
+pip: Gestor de pacotes do Python
+
+📦 Instalação e Configuração
+
+Clonar ou Transferir o Repositório
+Garanta que a estrutura de diretórios corresponde ao esquema apresentado acima.
+
+Navegar para o Diretório do Projeto
+
+cd web
+
+Instalar as Dependências Necessárias
+Instale o OpenCV, Flask e as bibliotecas necessárias:
+
+pip install flask opencv-python opencv-contrib-python pillow
+
+🏃 Como Executar
+
+Executar a Aplicação Flask
+
+python app.py
+
+Aceder à Aplicação
+Abra o seu navegador e aceda a:
+
+[http://127.0.0.1:5000](http://127.0.0.1:5000)
+
+⚙️ Como Funciona
+
+Recolha de Dados: As imagens dos rostos são armazenadas em dataset/<nome_utilizador>/ (ex.: dataset/Enzo/).
+
+Treino: O treinador facial processa as imagens a partir do diretório dataset/ e atualiza o ficheiro trainer.yml.
+
+Deteção e Reconhecimento: Ao executar o app.py, o OpenCV utiliza o haarcascade_frontalface_default.xml para localizar rostos em tempo real ou em fotos carregadas, cruzando depois os dados com o trainer.yml e a faces.db.
