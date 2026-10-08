@@ -45,6 +45,21 @@ os.makedirs(DATASET_DIR, exist_ok=True)
 os.makedirs(STATIC_DIR, exist_ok=True)
 os.makedirs(TEMPLATES_DIR, exist_ok=True)
 
+app.config['TEMPLATES_AUTO_RELOAD'] = True
+
+
+@app.context_processor
+def injetar_assets():
+    # Acrescenta ?v=<data de modificação> nos arquivos estáticos para evitar cache velho
+    def asset(filename):
+        try:
+            v = int(os.path.getmtime(os.path.join(STATIC_DIR, filename)))
+        except OSError:
+            v = 0
+        return url_for('static', filename=filename, v=v)
+    return {"asset": asset}
+
+
 ENCODINGS_CACHE = {"nomes": [], "vecs": [], "matriz": None}
 ULTIMOS_ACESSOS = {}
 
@@ -66,7 +81,9 @@ def init_db():
             nome TEXT UNIQUE NOT NULL,
             pasta TEXT NOT NULL,
             senha TEXT DEFAULT '123456',
-            role TEXT DEFAULT 'user'
+            role TEXT DEFAULT 'user',
+            funcao TEXT DEFAULT 'Pesquisador',
+            ativo INTEGER DEFAULT 1
         )
     """)
 
@@ -76,6 +93,10 @@ def init_db():
         cursor.execute("ALTER TABLE usuarios ADD COLUMN senha TEXT DEFAULT '123456'")
     if "role" not in colunas:
         cursor.execute("ALTER TABLE usuarios ADD COLUMN role TEXT DEFAULT 'user'")
+    if "funcao" not in colunas:
+        cursor.execute("ALTER TABLE usuarios ADD COLUMN funcao TEXT DEFAULT 'Pesquisador'")
+    if "ativo" not in colunas:
+        cursor.execute("ALTER TABLE usuarios ADD COLUMN ativo INTEGER DEFAULT 1")
 
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS encodings (
@@ -99,11 +120,11 @@ def init_db():
         pasta_admin = os.path.join(DATASET_DIR, "admin")
         os.makedirs(pasta_admin, exist_ok=True)
         cursor.execute(
-            "INSERT INTO usuarios (nome, pasta, senha, role) VALUES ('admin', ?, 'admin123', 'admin')",
+            "INSERT INTO usuarios (nome, pasta, senha, role, funcao) VALUES ('admin', ?, 'admin123', 'admin', 'Administrador')",
             (pasta_admin,)
         )
     else:
-        cursor.execute("UPDATE usuarios SET role = 'admin' WHERE nome = 'admin'")
+        cursor.execute("UPDATE usuarios SET role = 'admin', ativo = 1 WHERE nome = 'admin'")
 
     conn.commit()
     conn.close()
@@ -112,7 +133,13 @@ def init_db():
 def recarregar_cache_encodings():
     conn = sqlite3.connect(DB_FILE)
     cursor = conn.cursor()
-    cursor.execute("SELECT nome, encoding FROM encodings")
+    # Usuários inativos não entram no cache, então não são reconhecidos
+    cursor.execute("""
+        SELECT e.nome, e.encoding
+        FROM encodings e
+        JOIN usuarios u ON u.nome = e.nome
+        WHERE COALESCE(u.ativo, 1) = 1
+    """)
     rows = cursor.fetchall()
     conn.close()
 
@@ -129,7 +156,6 @@ def recarregar_cache_encodings():
 
 
 def adicionar_ao_cache(nome, vec):
-    # Adiciona só o novo encoding ao cache, sem reler o banco inteiro a cada foto
     vec = np.asarray(vec, dtype=np.float64)
     ENCODINGS_CACHE["nomes"].append(nome)
     ENCODINGS_CACHE["vecs"].append(vec)
@@ -145,10 +171,31 @@ recarregar_cache_encodings()
 
 # --- DECORADORES DE SEGURANÇA ---
 
+FUNCAO_PADRAO = "Pesquisador"
+
+
+def limpar_funcao(valor):
+    funcao = (valor or "").strip()[:60]
+    return funcao or FUNCAO_PADRAO
+
+
+def usuario_esta_ativo(nome):
+    conn = sqlite3.connect(DB_FILE)
+    cursor = conn.cursor()
+    cursor.execute("SELECT COALESCE(ativo, 1) FROM usuarios WHERE nome = ?", (nome,))
+    row = cursor.fetchone()
+    conn.close()
+    return bool(row and row[0])
+
+
 def login_required(f):
     @wraps(f)
     def decorated_function(*args, **kwargs):
         if 'usuario' not in session:
+            return redirect(url_for('login'))
+        # Se o usuário foi inativado enquanto estava logado, derruba a sessão
+        if not usuario_esta_ativo(session['usuario']):
+            session.clear()
             return redirect(url_for('login'))
         return f(*args, **kwargs)
     return decorated_function
@@ -159,6 +206,9 @@ def admin_required(f):
     def decorated_function(*args, **kwargs):
         if 'usuario' not in session or session.get('role') != 'admin':
             return jsonify({"mensagem": "Acesso negado. Requer privilégios de Administrador."}), 403
+        if not usuario_esta_ativo(session['usuario']):
+            session.clear()
+            return jsonify({"mensagem": "Sua conta está inativa."}), 403
         return f(*args, **kwargs)
     return decorated_function
 
@@ -200,7 +250,6 @@ def desenhar_marcador_opencv(frame, boxes, rotulo="ROSTO DETECTADO"):
 
 def registrar_acesso(nome):
     agora = time.time()
-    # Evita gravações redundantes consecutivas no banco para o mesmo usuário num intervalo curto (10s)
     if nome in ULTIMOS_ACESSOS and (agora - ULTIMOS_ACESSOS[nome]) < 10:
         return
     ULTIMOS_ACESSOS[nome] = agora
@@ -212,7 +261,7 @@ def registrar_acesso(nome):
     conn.close()
 
 
-def processar_captura(nome_raw, img_b64, permitir_criar_usuario):
+def processar_captura(nome_raw, img_b64, permitir_criar_usuario, funcao_raw=None):
     nome = normalizar_nome(nome_raw)
     if not nome:
         return {"status": 400, "mensagem": "Nome inválido!"}
@@ -263,7 +312,12 @@ def processar_captura(nome_raw, img_b64, permitir_criar_usuario):
 
     blob_encoding = encodings[0].tobytes()
     
-    cursor.execute("INSERT OR IGNORE INTO usuarios (nome, pasta) VALUES (?, ?)", (nome, pasta_destino))
+    cursor.execute(
+        "INSERT OR IGNORE INTO usuarios (nome, pasta, funcao) VALUES (?, ?, ?)",
+        (nome, pasta_destino, limpar_funcao(funcao_raw)),
+    )
+    cursor.execute("SELECT COALESCE(ativo, 1) FROM usuarios WHERE nome = ?", (nome,))
+    esta_ativo = bool(cursor.fetchone()[0])
     cursor.execute(
         "INSERT INTO encodings (nome, encoding, caminho_foto) VALUES (?, ?, ?)",
         (nome, blob_encoding, caminho_foto),
@@ -271,7 +325,8 @@ def processar_captura(nome_raw, img_b64, permitir_criar_usuario):
     conn.commit()
     conn.close()
 
-    adicionar_ao_cache(nome, encodings[0])
+    if esta_ativo:
+        adicionar_ao_cache(nome, encodings[0])
 
     boxes = [(top * 2, right * 2, bottom * 2, left * 2) for (top, right, bottom, left) in boxes_small]
     rotulo = f"CAPTURADA ({proximo_num}/{MINIMO_FOTOS_REQUERIDO})"
@@ -307,7 +362,7 @@ def login_senha():
     conn = sqlite3.connect(DB_FILE)
     cursor = conn.cursor()
     cursor.execute(
-        "SELECT nome, role FROM usuarios WHERE (nome = ? OR nome = ?) AND senha = ?", 
+        "SELECT nome, role, COALESCE(ativo, 1) FROM usuarios WHERE (nome = ? OR nome = ?) AND senha = ?", 
         (usuario_input, usuario_raw, senha_input)
     )
     user = cursor.fetchone()
@@ -316,7 +371,10 @@ def login_senha():
     if not user:
         return jsonify({"sucesso": False, "mensagem": "Usuário ou senha inválidos!"}), 401
 
-    user_nome, user_role = user
+    user_nome, user_role, user_ativo = user
+
+    if not user_ativo:
+        return jsonify({"sucesso": False, "mensagem": "Conta inativa. Procure um administrador."}), 403
 
     if tipo_acesso == 'admin' and user_role != 'admin':
         return jsonify({"sucesso": False, "mensagem": "Acesso negado: conta sem permissão de administrador."}), 403
@@ -334,9 +392,10 @@ def cadastrar_usuario():
     senha = data.get('senha', '')
     confirmar_senha = data.get('confirmar_senha', '')
     role = data.get('role', 'user')
+    funcao = limpar_funcao(data.get('funcao'))
 
     if not usuario_raw or not senha or not confirmar_senha:
-        return jsonify({"sucesso": False, "mensagem": "Preencha todos os campos!"}), 400
+        return jsonify({"sucesso": False, "mensagem": "Preencha todos os campos obrigatórios!"}), 400
 
     if senha != confirmar_senha:
         return jsonify({"sucesso": False, "mensagem": "As senhas não coincidem!"}), 400
@@ -360,13 +419,13 @@ def cadastrar_usuario():
 
         if usuario_existente:
             cursor.execute(
-                "UPDATE usuarios SET senha = ?, role = ?, pasta = ? WHERE nome = ?",
-                (senha, role, pasta_usuario, usuario_norm)
+                "UPDATE usuarios SET senha = ?, role = ?, pasta = ?, funcao = ? WHERE nome = ?",
+                (senha, role, pasta_usuario, funcao, usuario_norm)
             )
         else:
             cursor.execute(
-                "INSERT INTO usuarios (nome, pasta, senha, role) VALUES (?, ?, ?, ?)",
-                (usuario_norm, pasta_usuario, senha, role)
+                "INSERT INTO usuarios (nome, pasta, senha, role, funcao) VALUES (?, ?, ?, ?, ?)",
+                (usuario_norm, pasta_usuario, senha, role, funcao)
             )
 
         conn.commit()
@@ -374,7 +433,7 @@ def cadastrar_usuario():
     except Exception as e:
         return jsonify({"sucesso": False, "mensagem": f"Erro no banco de dados: {str(e)}"}), 500
 
-    return jsonify({"sucesso": True, "mensagem": f"Conta de {role.capitalize()} salva com sucesso!"})
+    return jsonify({"sucesso": True, "mensagem": f"Conta salva com sucesso!"})
 
 
 @app.route('/logout')
@@ -393,25 +452,74 @@ def index():
         'index.html', 
         usuario=session.get('usuario'), 
         role=user_role,
-        body_class='user-role' if user_role != 'admin' else ''
+        body_class='user-role' if user_role != 'admin' else '',
+        minimo_fotos=MINIMO_FOTOS_REQUERIDO
     )
 
 
 # --- ROTAS DA API INTERNA ---
+@app.route('/api/editar_usuario', methods=['POST'])
+@admin_required
+def editar_usuario():
+    data = request.json or {}
+    nome = normalizar_nome(data.get('nome'))
+    funcao = limpar_funcao(data.get('funcao'))
+
+    if not nome:
+        return jsonify({"mensagem": "Usuário inválido!"}), 400
+
+    conn = sqlite3.connect(DB_FILE)
+    cursor = conn.cursor()
+    cursor.execute("UPDATE usuarios SET funcao = ? WHERE nome = ?", (funcao, nome))
+    alterados = cursor.rowcount
+    conn.commit()
+    conn.close()
+
+    if alterados == 0:
+        return jsonify({"mensagem": "Usuário não encontrado!"}), 404
+    return jsonify({"mensagem": "Função atualizada com sucesso.", "funcao": funcao})
+
+
+@app.route('/api/alternar_status', methods=['POST'])
+@admin_required
+def alternar_status():
+    data = request.json or {}
+    nome = normalizar_nome(data.get('nome'))
+    ativo = 1 if data.get('ativo') else 0
+
+    if not nome:
+        return jsonify({"mensagem": "Usuário inválido!"}), 400
+    if not ativo and (nome == 'admin' or nome == session.get('usuario')):
+        return jsonify({"mensagem": "Você não pode inativar a sua própria conta nem o admin principal."}), 400
+
+    conn = sqlite3.connect(DB_FILE)
+    cursor = conn.cursor()
+    cursor.execute("UPDATE usuarios SET ativo = ? WHERE nome = ?", (ativo, nome))
+    alterados = cursor.rowcount
+    conn.commit()
+    conn.close()
+
+    if alterados == 0:
+        return jsonify({"mensagem": "Usuário não encontrado!"}), 404
+
+    recarregar_cache_encodings()
+    estado = "ativado" if ativo else "inativado"
+    return jsonify({"mensagem": f"Usuário '{nome}' {estado} com sucesso.", "ativo": bool(ativo)})
+
 
 @app.route('/api/dados', methods=['GET'])
 @login_required
 def obter_dados():
     conn = sqlite3.connect(DB_FILE)
     cursor = conn.cursor()
-    cursor.execute("SELECT id, nome, pasta FROM usuarios")
+    cursor.execute("SELECT id, nome, pasta, role, funcao, COALESCE(ativo, 1) FROM usuarios")
     usuarios_db = cursor.fetchall()
 
     usuarios = []
     for u in usuarios_db:
         cursor.execute("SELECT COUNT(*) FROM encodings WHERE nome = ?", (u[1],))
         qtd_fotos = cursor.fetchone()[0]
-        usuarios.append([u[0], u[1], u[2], qtd_fotos])
+        usuarios.append([u[0], u[1], u[2], qtd_fotos, u[3], u[4], u[5]])
 
     cursor.execute("SELECT id, nome, datetime(data_hora, 'localtime') FROM acessos ORDER BY id DESC LIMIT 50")
     acessos = cursor.fetchall()
@@ -420,11 +528,45 @@ def obter_dados():
     return jsonify({"usuarios": usuarios, "acessos": acessos})
 
 
+@app.route('/api/estatisticas', methods=['GET'])
+@login_required
+def estatisticas():
+    from datetime import date, timedelta
+    conn = sqlite3.connect(DB_FILE)
+    c = conn.cursor()
+    c.execute("SELECT COUNT(*) FROM usuarios")
+    total = c.fetchone()[0]
+    hoje_sql = "date(data_hora,'localtime') = date('now','localtime')"
+    c.execute(f"SELECT COUNT(*) FROM acessos WHERE {hoje_sql}")
+    hoje = c.fetchone()[0]
+    c.execute("SELECT COUNT(*) FROM acessos WHERE date(data_hora,'localtime') = date('now','localtime','-1 day')")
+    ontem = c.fetchone()[0]
+    c.execute("SELECT nome, strftime('%H:%M', data_hora,'localtime') FROM acessos ORDER BY id DESC LIMIT 1")
+    ultimo = c.fetchone()
+    c.execute("SELECT date(data_hora,'localtime'), COUNT(*) FROM acessos "
+              "WHERE date(data_hora,'localtime') >= date('now','localtime','-6 days') GROUP BY 1")
+    por_dia = dict(c.fetchall())
+    conn.close()
+
+    nomes = ["Seg", "Ter", "Qua", "Qui", "Sex", "Sáb", "Dom"]
+    semana = []
+    for i in range(6, -1, -1):
+        d = date.today() - timedelta(days=i)
+        semana.append({"dia": nomes[d.weekday()], "valor": por_dia.get(d.isoformat(), 0)})
+
+    variacao = round((hoje - ontem) / ontem * 100) if ontem else (100 if hoje else 0)
+    return jsonify({
+        "total_usuarios": total, "deteccoes_hoje": hoje, "variacao": variacao,
+        "ultimo": {"nome": ultimo[0], "hora": ultimo[1]} if ultimo else None,
+        "semana": semana,
+    })
+
+
 @app.route('/api/cadastrar', methods=['POST'])
 @admin_required
 def cadastrar():
     data = request.json or {}
-    resultado = processar_captura(data.get('nome'), data.get('image'), permitir_criar_usuario=True)
+    resultado = processar_captura(data.get('nome'), data.get('image'), permitir_criar_usuario=True, funcao_raw=data.get('funcao'))
     status = resultado.pop("status")
     return jsonify(resultado), status
 
