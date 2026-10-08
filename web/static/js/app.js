@@ -92,33 +92,72 @@ async function removeUser(nome) {
 }
 
 // ---- Recognition() ----
-const rec = { on: false, stream: null };
+const rec = { on: false, stream: null, faces: [], ultimoToast: { nome: '', t: 0 } };
+const _grabCanvas = document.createElement('canvas');
 const grab = (video, w = 480) => {
-  const c = document.createElement('canvas'); c.width = w; c.height = Math.round(w * video.videoHeight / video.videoWidth) || 360;
+  const c = _grabCanvas; c.width = w; c.height = Math.round(w * video.videoHeight / video.videoWidth) || 360;
   c.getContext('2d').drawImage(video, 0, 0, c.width, c.height); return c.toDataURL('image/jpeg', 0.6);
 };
 async function loadFeed() { await loadData(); $('#feed-list').innerHTML = state.acessos.slice(0, 8).map(recordHTML).join(''); }
+// Desenha os retângulos num canvas por cima do vídeo ao vivo (60fps),
+// suavizando o movimento entre uma resposta do servidor e outra.
+function drawFaces() {
+  const v = $('#rec-video'), cv = $('#rec-canvas'), ctx = cv.getContext('2d');
+  const W = cv.clientWidth, H = cv.clientHeight, dpr = window.devicePixelRatio || 1;
+  if (cv.width !== W * dpr || cv.height !== H * dpr) { cv.width = W * dpr; cv.height = H * dpr; }
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.clearRect(0, 0, W, H);
+  if (!rec.on || !v.videoWidth) return;
+  // mesmo enquadramento do CSS (object-fit: cover; object-position: center 20%)
+  const sc = Math.max(W / v.videoWidth, H / v.videoHeight);
+  const dw = v.videoWidth * sc, dh = v.videoHeight * sc, ox = (W - dw) * 0.5, oy = (H - dh) * 0.2;
+  const now = performance.now();
+  rec.faces = rec.faces.filter(f => now - f.visto < 500);
+  for (const f of rec.faces) {
+    f.cur = f.cur.map((c, i) => c + (f.alvo[i] - c) * 0.35);
+    const [x, y, w, h] = f.cur, cor = f.ok ? '#00ff00' : '#ff0000';
+    ctx.strokeStyle = cor; ctx.lineWidth = 2; ctx.strokeRect(ox + x * dw, oy + y * dh, w * dw, h * dh);
+    ctx.fillStyle = cor; ctx.font = '600 14px sans-serif'; ctx.fillText(f.nome, ox + x * dw, oy + y * dh - 8);
+  }
+}
+function atualizarFaces(novas) {
+  const now = performance.now(), usadas = new Set();
+  for (const n of novas) {
+    const cx = n.box[0] + n.box[2] / 2, cy = n.box[1] + n.box[3] / 2;
+    let melhor = null, dist = 0.2;
+    for (const f of rec.faces) {
+      if (usadas.has(f)) continue;
+      const d = Math.hypot(f.alvo[0] + f.alvo[2] / 2 - cx, f.alvo[1] + f.alvo[3] / 2 - cy);
+      if (d < dist) { dist = d; melhor = f; }
+    }
+    if (melhor) { melhor.alvo = n.box; melhor.nome = n.nome; melhor.ok = n.ok; melhor.visto = now; usadas.add(melhor); }
+    else { const f = { cur: n.box.slice(), alvo: n.box, nome: n.nome, ok: n.ok, visto: now }; rec.faces.push(f); usadas.add(f); }
+  }
+}
+function loopDesenho() { if (!rec.on) return; drawFaces(); requestAnimationFrame(loopDesenho); }
+
 async function startRecognition() {
   try { rec.stream = await navigator.mediaDevices.getUserMedia({ video: true }); }
   catch { return toast('Não foi possível acessar a câmera.'); }
-  const v = $('#rec-video'); v.srcObject = rec.stream; await v.play();
-  rec.on = true; setRecUI(true);
+  const v = $('#rec-video'); v.srcObject = rec.stream; await v.play(); v.classList.add('on');
+  rec.on = true; rec.faces = []; setRecUI(true); loopDesenho();
   while (rec.on) {
+    // sem sleep: manda o próximo frame assim que o servidor responde
     const { ok, data } = await api('/api/reconhecer', { image: grab(v) });
     if (ok && rec.on) {
-      $('#rec-img').src = data.image; $('#rec-img').hidden = false;
+      atualizarFaces(data.faces || []);
       const nome = data.reconhecidos[0];
       $('#rec-who').hidden = !nome;
       if (nome) {
         $('#rec-name').textContent = nome; $('#rec-time').textContent = new Date().toLocaleTimeString('pt-BR');
-        if (localStorage.notify !== '0') toast(`Reconhecido: ${nome}`);
+        const agora = Date.now(), u = rec.ultimoToast;
+        if (localStorage.notify !== '0' && (u.nome !== nome || agora - u.t > 5000)) { toast(`Reconhecido: ${nome}`); rec.ultimoToast = { nome, t: agora }; }
       }
-    }
-    await sleep(300);
+    } else if (!ok) await sleep(300);
   }
 }
 function stopRecognition() {
-  rec.on = false; rec.stream?.getTracks().forEach(t => t.stop()); rec.stream = null; setRecUI(false);
+  rec.on = false; rec.faces = []; rec.stream?.getTracks().forEach(t => t.stop()); rec.stream = null; setRecUI(false);
+  const cv = $('#rec-canvas'); cv.getContext('2d').clearRect(0, 0, cv.width, cv.height);
 }
 function setRecUI(on) {
   $('#rec-view').classList.toggle('paused', !on);

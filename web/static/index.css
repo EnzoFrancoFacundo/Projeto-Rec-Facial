@@ -195,3 +195,10 @@ th { color: #a6b4c7; background: #0e182c; border-color: #2a3a52; }td { color: #e
 
 /* Modal rolável em telas baixas (campos de baixo não ficam cortados) */
 .modal { max-height: calc(100vh - 40px); overflow-y: auto; }
+
+/* Reconhecimento: vídeo ao vivo + canvas com os retângulos (mesmo visual de antes) */
+.camera-view > video { display: block; position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; object-position: center 20%; filter: saturate(.75) contrast(1.04) brightness(.76); transition: .3s; }
+.camera-view > video:not(.on) { visibility: hidden; }
+.camera-view > canvas { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; filter: saturate(.75) contrast(1.04) brightness(.76); transition: .3s; }
+.camera-view.paused > video, .camera-view.paused > canvas { filter: saturate(.2) brightness(.45); }
+.camera-view > .identified { z-index: 2; }

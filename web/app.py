@@ -583,50 +583,56 @@ def adicionar_foto():
 @app.route('/api/reconhecer', methods=['POST'])
 @login_required
 def reconhecer():
+    # Devolve só as coordenadas (normalizadas 0..1) e os nomes.
+    # O navegador desenha o retângulo sobre o vídeo ao vivo, sem reenviar imagem.
     data = request.json or {}
     frame = base64_to_cv2(data.get('image'))
     if frame is None:
-        return jsonify({"image": None, "erro": "Imagem inválida."}), 400
+        return jsonify({"faces": [], "reconhecidos": [], "erro": "Imagem inválida."}), 400
 
     nomes_conhecidos = ENCODINGS_CACHE["nomes"]
     matriz_conhecidos = ENCODINGS_CACHE["matriz"]
 
     if matriz_conhecidos is None or len(matriz_conhecidos) == 0:
-        return jsonify({"image": cv2_to_base64(frame), "reconhecidos": []})
+        return jsonify({"faces": [], "reconhecidos": []})
 
+    altura, largura = frame.shape[:2]
     small_frame = cv2.resize(frame, (0, 0), fx=0.5, fy=0.5)
     gray_small = cv2.cvtColor(small_frame, cv2.COLOR_BGR2GRAY)
+    h_small, w_small = gray_small.shape[:2]
 
     faces = face_cascade.detectMultiScale(
         gray_small, scaleFactor=1.2, minNeighbors=3, minSize=(30, 30)
     )
 
     nomes_reconhecidos = []
+    resultado = []
 
     if len(faces) > 0:
-        boxes_small = [(y, x + w, y + h, x) for (x, y, w, h) in faces]
+        boxes_small = [(int(y), int(x + w), int(y + h), int(x)) for (x, y, w, h) in faces]
         rgb_small = cv2.cvtColor(small_frame, cv2.COLOR_BGR2RGB)
         encodings_frame = face_recognition.face_encodings(rgb_small, boxes_small)
 
         for (top, right, bottom, left), encoding_atual in zip(boxes_small, encodings_frame):
-            top_full, right_full, bottom_full, left_full = top * 2, right * 2, bottom * 2, left * 2
-
             nome = "Desconhecido"
-            cor = (0, 0, 255)
+            reconhecido = False
 
             distancias = np.linalg.norm(matriz_conhecidos - encoding_atual, axis=1)
             if len(distancias) > 0:
                 melhor_indice = int(np.argmin(distancias))
                 if distancias[melhor_indice] <= TOLERANCIA:
                     nome = nomes_conhecidos[melhor_indice]
-                    cor = (0, 255, 0)
+                    reconhecido = True
                     registrar_acesso(nome)
                     nomes_reconhecidos.append(nome)
 
-            cv2.rectangle(frame, (left_full, top_full), (right_full, bottom_full), cor, 2)
-            cv2.putText(frame, nome, (left_full, top_full - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.6, cor, 2)
+            resultado.append({
+                "nome": nome,
+                "ok": reconhecido,
+                "box": [left / w_small, top / h_small, (right - left) / w_small, (bottom - top) / h_small],
+            })
 
-    return jsonify({"image": cv2_to_base64(frame), "reconhecidos": nomes_reconhecidos})
+    return jsonify({"faces": resultado, "reconhecidos": nomes_reconhecidos})
 
 
 @app.route('/api/renomear', methods=['POST'])
