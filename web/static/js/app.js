@@ -9,9 +9,117 @@ const api = async (url, body) => {
   const r = await fetch(url, body ? { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) } : {});
   return { ok: r.ok, data: await r.json().catch(() => ({})) };
 };
-function toast(msg) { const t = document.createElement('div'); t.className = 'toast'; t.textContent = msg; document.body.append(t); setTimeout(() => t.remove(), 2800); }
+
 const avatar = nome => `<span class="avatar">${esc(nome.slice(0, 2).toUpperCase())}</span>`;
 const recordHTML = a => `<div class="record">${avatar(a[1])}<div class="record-name"><strong>${esc(a[1])}</strong><span>Entrada principal</span></div><time>${a[2].slice(11, 16)}</time></div>`;
+
+// ===== Pop-up padronizado =====
+const POPUP_ICONS = { success: 'check', error: 'error', warn: 'warn', info: 'info' };
+const POPUP_TITLES = { success: 'Sucesso', error: 'Erro', warn: 'Atenção', info: 'Informação' };
+
+function popup(msg, tipo = 'info', titulo = null) {
+  return new Promise(resolve => {
+    const el = $('#popup');
+    const box = el.querySelector('.popup');
+    $('#popup-icon').innerHTML = ico(POPUP_ICONS[tipo] || 'info', 22);
+    $('#popup-title').textContent = titulo || POPUP_TITLES[tipo] || 'Aviso';
+    $('#popup-msg').textContent = msg;
+
+    const ok = $('#popup-ok');
+    const cancel = $('#popup-cancel');
+
+    cancel.style.display = 'none';
+    ok.textContent = 'OK';
+
+    box.className = 'popup ' + tipo;
+    el.hidden = false;
+    el.style.display = 'grid';
+
+    const fechar = () => {
+      el.hidden = true;
+      el.style.display = '';
+      ok.onclick = null;
+      resolve(true);
+    };
+    ok.onclick = fechar;
+    ok.focus();
+  });
+}
+
+function confirmar(msg, titulo = 'Confirmar') {
+  return new Promise(resolve => {
+    const el = $('#popup');
+    const box = el.querySelector('.popup');
+    $('#popup-icon').innerHTML = ico('warn', 22);
+    $('#popup-title').textContent = titulo;
+    $('#popup-msg').textContent = msg;
+
+    const ok = $('#popup-ok');
+    const cancel = $('#popup-cancel');
+
+    cancel.style.display = '';
+    ok.textContent = 'Confirmar';
+    cancel.textContent = 'Cancelar';
+
+    box.className = 'popup warn';
+    el.hidden = false;
+    el.style.display = 'grid';
+
+    const fim = v => {
+      el.hidden = true;
+      el.style.display = '';
+      ok.onclick = cancel.onclick = null;
+      resolve(v);
+    };
+    ok.onclick = () => fim(true);
+    cancel.onclick = () => fim(false);
+    cancel.focus();
+  });
+}
+
+// ESC fecha popup
+document.addEventListener('keydown', e => {
+  const el = document.getElementById('popup');
+  if (!el || el.hidden) return;
+  if (e.key === 'Escape') {
+    const cancel = $('#popup-cancel');
+    const ok = $('#popup-ok');
+    if (cancel && cancel.style.display !== 'none' && cancel.onclick) cancel.onclick();
+    else if (ok && ok.onclick) ok.onclick();
+  }
+});
+// Clique no backdrop fecha popup
+document.addEventListener('click', e => {
+  const el = document.getElementById('popup');
+  if (el && !el.hidden && e.target === el) {
+    const cancel = $('#popup-cancel');
+    const ok = $('#popup-ok');
+    if (cancel && cancel.style.display !== 'none' && cancel.onclick) cancel.onclick();
+    else if (ok && ok.onclick) ok.onclick();
+  }
+});
+
+// ===== Tema (claro / escuro) =====
+function pintarBotoesTema(tema) {
+  const html = tema === 'light' ? ico('moon', 18) : ico('sun', 18);
+  $$('.theme-toggle').forEach(btn => { btn.innerHTML = html; });
+}
+function aplicarTema(tema) {
+  document.documentElement.setAttribute('data-theme', tema);
+  try { localStorage.setItem('tema', tema); } catch (e) {}
+  pintarBotoesTema(tema);
+}
+function alternarTema() {
+  const atual = document.documentElement.getAttribute('data-theme') || 'dark';
+  aplicarTema(atual === 'light' ? 'dark' : 'light');
+}
+document.addEventListener('click', e => {
+  const btn = e.target.closest('.theme-toggle');
+  if (btn) { e.preventDefault(); alternarTema(); }
+});
+document.addEventListener('DOMContentLoaded', () => {
+  aplicarTema(document.documentElement.getAttribute('data-theme') || 'dark');
+});
 
 // useState(page, people)
 const state = { page: 'dashboard', people: [], acessos: [] };
@@ -22,6 +130,7 @@ function setPage(p) {
   $$('.nav-item').forEach(b => b.classList.toggle('active', b.dataset.go === p));
   if (p !== 'recognition') stopRecognition();
   ({ dashboard: loadDashboard, users: loadUsers, recognition: loadFeed }[p] || (() => {}))();
+  pintarBotoesTema(document.documentElement.getAttribute('data-theme') || 'dark');
 }
 
 async function loadData() {
@@ -44,18 +153,20 @@ async function loadDashboard() {
 }
 
 function weekChart(sem) {
-  const max = Math.max(...sem.map(d => d.valor), 1), vals = sem.map(d => d.valor / max * 100);
-  const pts = vals.map((v, i) => `${20 + i * 92},${130 - v}`).join(' ');
+  const max = Math.max(...sem.map(d => d.valor), 1);
   const top = sem.reduce((a, b) => b.valor > a.valor ? b : a);
-  $('#week-chart').innerHTML = `<div class="chart-wrap">
-    <div class="y-labels">${[1, .75, .5, .25, 0].map(f => `<span>${Math.round(max * f)}</span>`).join('')}</div>
-    <svg class="chart" viewBox="0 0 590 150" preserveAspectRatio="none">
-      <defs><linearGradient id="fill" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="#14b89a" stop-opacity=".22"/><stop offset="1" stop-color="#14b89a" stop-opacity="0"/></linearGradient></defs>
-      ${[25, 50, 75, 100, 125].map(y => `<line x1="0" x2="590" y1="${y}" y2="${y}" stroke-width="1"/>`).join('')}
-      <polygon points="20,130 ${pts} 572,130" fill="url(#fill)"/>
-      <polyline points="${pts}" fill="none" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
-      ${vals.map((v, i) => `<circle cx="${20 + i * 92}" cy="${130 - v}" r="${sem[i] === top ? 5 : 3.5}" stroke-width="3"/>`).join('')}
-    </svg><div class="x-labels">${sem.map(d => `<span>${d.dia}</span>`).join('')}</div></div>`;
+  const barras = sem.map(d => {
+    const alturaPct = (d.valor / max) * 100;
+    const destaque = d === top && top.valor > 0;
+    return `<div class="bar-col">
+        <span class="bar-value">${d.valor}</span>
+        <div class="bar-track">
+          <div class="bar-fill${destaque ? ' peak' : ''}" style="height:${alturaPct}%"></div>
+        </div>
+        <span class="bar-label">${d.dia}</span>
+      </div>`;
+  }).join('');
+  $('#week-chart').innerHTML = `<div class="bar-chart">${barras}</div>`;
   $('#peak-title').textContent = top.valor ? `Maior pico: ${top.dia}` : 'Sem detecções na semana';
   $('#peak-sub').textContent = top.valor ? `${top.valor} detecções` : '';
 }
@@ -79,35 +190,40 @@ function renderUsers() {
       <button class="danger" title="Excluir" data-act="del" data-nome="${esc(p.nome)}">${ico('trash', 17)}</button></div></td></tr>`;
   }).join('');
 }
+
 async function toggleUser(nome, ativoAtual) {
   const ativar = !ativoAtual;
-  if (!ativar && !confirm(`Inativar ${nome}? Essa pessoa não conseguirá entrar nem será reconhecida pela câmera.`)) return;
+  if (!ativar) {
+    const ok = await confirmar(`Inativar ${nome}? Essa pessoa não conseguirá entrar nem será reconhecida pela câmera.`, 'Inativar usuário');
+    if (!ok) return;
+  }
   const { data } = await api('/api/alternar_status', { nome, ativo: ativar });
-  toast(data.mensagem); loadUsers();
+  popup(data.mensagem, 'success');
+  loadUsers();
 }
 async function removeUser(nome) {
-  if (!confirm(`Excluir ${nome}? Esta ação não poderá ser desfeita.`)) return;
+  const ok = await confirmar(`Excluir ${nome}? Esta ação não poderá ser desfeita.`, 'Excluir usuário');
+  if (!ok) return;
   const { data } = await api('/api/deletar', { nome });
-  toast(data.mensagem); loadUsers();
+  popup(data.mensagem, 'success');
+  loadUsers();
 }
 
 // ---- Recognition() ----
-const rec = { on: false, stream: null, faces: [], ultimoToast: { nome: '', t: 0 } };
+const rec = { on: false, stream: null, faces: [] };
 const _grabCanvas = document.createElement('canvas');
 const grab = (video, w = 480) => {
   const c = _grabCanvas; c.width = w; c.height = Math.round(w * video.videoHeight / video.videoWidth) || 360;
   c.getContext('2d').drawImage(video, 0, 0, c.width, c.height); return c.toDataURL('image/jpeg', 0.6);
 };
 async function loadFeed() { await loadData(); $('#feed-list').innerHTML = state.acessos.slice(0, 8).map(recordHTML).join(''); }
-// Desenha os retângulos num canvas por cima do vídeo ao vivo (60fps),
-// suavizando o movimento entre uma resposta do servidor e outra.
+
 function drawFaces() {
   const v = $('#rec-video'), cv = $('#rec-canvas'), ctx = cv.getContext('2d');
   const W = cv.clientWidth, H = cv.clientHeight, dpr = window.devicePixelRatio || 1;
   if (cv.width !== W * dpr || cv.height !== H * dpr) { cv.width = W * dpr; cv.height = H * dpr; }
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.clearRect(0, 0, W, H);
   if (!rec.on || !v.videoWidth) return;
-  // mesmo enquadramento do CSS (object-fit: cover; object-position: center 20%)
   const sc = Math.max(W / v.videoWidth, H / v.videoHeight);
   const dw = v.videoWidth * sc, dh = v.videoHeight * sc, ox = (W - dw) * 0.5, oy = (H - dh) * 0.2;
   const now = performance.now();
@@ -137,20 +253,18 @@ function loopDesenho() { if (!rec.on) return; drawFaces(); requestAnimationFrame
 
 async function startRecognition() {
   try { rec.stream = await navigator.mediaDevices.getUserMedia({ video: true }); }
-  catch { return toast('Não foi possível acessar a câmera.'); }
+  catch { return popup('Não foi possível acessar a câmera.', 'error'); }
   const v = $('#rec-video'); v.srcObject = rec.stream; await v.play(); v.classList.add('on');
   rec.on = true; rec.faces = []; setRecUI(true); loopDesenho();
   while (rec.on) {
-    // sem sleep: manda o próximo frame assim que o servidor responde
     const { ok, data } = await api('/api/reconhecer', { image: grab(v) });
     if (ok && rec.on) {
       atualizarFaces(data.faces || []);
       const nome = data.reconhecidos[0];
       $('#rec-who').hidden = !nome;
       if (nome) {
-        $('#rec-name').textContent = nome; $('#rec-time').textContent = new Date().toLocaleTimeString('pt-BR');
-        const agora = Date.now(), u = rec.ultimoToast;
-        if (localStorage.notify !== '0' && (u.nome !== nome || agora - u.t > 5000)) { toast(`Reconhecido: ${nome}`); rec.ultimoToast = { nome, t: agora }; }
+        $('#rec-name').textContent = nome;
+        $('#rec-time').textContent = new Date().toLocaleTimeString('pt-BR');
       }
     } else if (!ok) await sleep(300);
   }
@@ -170,8 +284,13 @@ function setRecUI(on) {
 setInterval(() => state.page === 'recognition' && rec.on && loadFeed(), 5000);
 
 // ---- Settings() ----
+// O aviso "Notificações em tempo real" continua existindo para o cadastro de pessoas.
+// Nada mais é disparado na tela de reconhecimento.
 $('#cfg-notify').checked = localStorage.notify !== '0';
-$('#cfg-save').onclick = () => { localStorage.notify = $('#cfg-notify').checked ? '1' : '0'; toast('Configurações salvas.'); };
+$('#cfg-save').onclick = () => {
+  localStorage.notify = $('#cfg-notify').checked ? '1' : '0';
+  popup('Configurações salvas.', 'success');
+};
 
 // ---- PersonModal() ----
 const M = { person: null, n: 0, run: false, stream: null };
@@ -199,9 +318,9 @@ function closeForm() {
 async function capture() {
   if (M.run) { M.run = false; return; }
   const nome = $('#f-name').value.trim();
-  if (!nome) return toast('Informe o nome antes de capturar.');
+  if (!nome) return popup('Informe o nome antes de capturar.', 'warn');
   if (!M.stream) {
-    try { M.stream = await navigator.mediaDevices.getUserMedia({ video: true }); } catch { return toast('Não foi possível acessar a câmera.'); }
+    try { M.stream = await navigator.mediaDevices.getUserMedia({ video: true }); } catch { return popup('Não foi possível acessar a câmera.', 'error'); }
     $('#cap-video').srcObject = M.stream; await $('#cap-video').play();
   }
   M.run = true; $('#f-name').readOnly = true; $('#cap-btn').textContent = 'Parar captura';
@@ -222,31 +341,32 @@ $('#person-form').onsubmit = async e => {
   if (M.person) {
     if (funcao !== M.person.funcao) {
       const { ok, data } = await api('/api/editar_usuario', { nome: M.person.nome, funcao });
-      if (!ok) return toast(data.mensagem || 'Não foi possível salvar a função. Reinicie o servidor (python app.py) para carregar o app.py atualizado.');
+      if (!ok) return popup(data.mensagem || 'Não foi possível salvar a função.', 'error');
     }
     if (nome !== M.person.nome) {
       const { ok, data } = await api('/api/renomear', { antigo_nome: M.person.nome, novo_nome: nome });
-      toast(data.mensagem); if (!ok) return;
-    } else toast('Alterações salvas.');
+      popup(data.mensagem, ok ? 'success' : 'error'); if (!ok) return;
+    } else popup('Alterações salvas.', 'success');
   } else {
-    // garante que a função digitada fique salva mesmo se foi alterada depois das fotos
     await api('/api/editar_usuario', { nome, funcao });
-    toast('Pessoa cadastrada com sucesso.');
+    popup('Pessoa cadastrada com sucesso.', 'success');
   }
   closeForm(); setPage('users');
 };
 $('#modal').onmousedown = e => e.target === e.currentTarget && closeForm();
 
-// ---- Eventos globais (substituem os onClick do JSX) ----
-document.addEventListener('click', e => {
-  const t = e.target.closest('[data-go],[data-act]'); if (!t) return;
+// ---- Eventos globais ----
+document.addEventListener('click', async e => {
+  const t = e.target.closest('[data-go],[data-act]');
+  if (!t) return;
+  if (e.target.closest('#popup')) return;
   if (t.dataset.go) return setPage(t.dataset.go);
   const { act, nome } = t.dataset;
   if (act === 'new') openForm();
   if (act === 'close') closeForm();
   if (act === 'edit') openForm(state.people.find(p => p.nome === nome));
-  if (act === 'toggle') toggleUser(nome, t.dataset.ativo === '1');
-  if (act === 'del') removeUser(nome);
+  if (act === 'toggle') await toggleUser(nome, t.dataset.ativo === '1');
+  if (act === 'del') await removeUser(nome);
 });
 $('#user-search').oninput = renderUsers;
 $('#rec-btn').onclick = () => rec.on ? stopRecognition() : startRecognition();

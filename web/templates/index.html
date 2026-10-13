@@ -8,8 +8,7 @@
 <header class="topbar">
   <div><h1>Painel de Controle</h1><p><span>{{ title }}</span> · {{ subtitle }}</p></div>
   <div class="top-actions">
-    <div class="admin-chip"><strong>{{ usuario }}</strong><span>{{ role|upper }}</span></div>
-    <a class="logout-button" href="{{ url_for('logout') }}">{{ ico('arrow', 17) }} Sair</a>
+    <button class="icon-button theme-toggle" type="button" title="Alternar tema" aria-label="Alternar tema"></button>
   </div>
 </header>
 {% endmacro %}
@@ -23,6 +22,16 @@
   <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Painel Facial</title>
   <link rel="icon" href="{{ url_for('static', filename='logo.ico') }}">
+  <script>
+    (function () {
+      try {
+        var t = localStorage.getItem('tema') || 'dark';
+        document.documentElement.setAttribute('data-theme', t);
+      } catch (e) {
+        document.documentElement.setAttribute('data-theme', 'dark');
+      }
+    })();
+  </script>
   <link rel="stylesheet" href="{{ asset('index.css') }}">
 </head>
 <body class="{{ body_class }}">
@@ -43,6 +52,11 @@
   <symbol id="i-close" viewBox="0 0 24 24"><path d="m6 6 12 12M18 6 6 18"/></symbol>
   <symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12 4 4L19 6"/></symbol>
   <symbol id="i-chevron" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></symbol>
+  <symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></symbol>
+  <symbol id="i-moon" viewBox="0 0 24 24"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8Z"/></symbol>
+  <symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 8h.01M11 12h1v4h1"/></symbol>
+  <symbol id="i-warn" viewBox="0 0 24 24"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z"/><path d="M12 9v4M12 17h.01"/></symbol>
+  <symbol id="i-error" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="m15 9-6 6M9 9l6 6"/></symbol>
 </defs></svg>
 
 <div class="app-shell">
@@ -58,7 +72,7 @@
     </nav>
     <div class="side-bottom">
       <div class="system-status"><span class="pulse"></span><div><strong>Sistema online</strong><small>OpenCV conectado</small></div></div>
-      <button class="new-user-side admin-only" data-act="new">{{ ico('plus', 18) }} Novo usuário</button>
+      <a class="logout-button side" href="{{ url_for('logout') }}">{{ ico('arrow', 17) }} Sair</a>
     </div>
   </aside>
 
@@ -152,6 +166,21 @@
       <label class="form-field"><span>Função do usuário</span><input id="f-funcao" type="text" maxlength="60" placeholder="Ex.: Bolsista" autocomplete="off"></label>
       <div class="modal-actions"><button type="button" class="secondary-button" data-act="close">Cancelar</button><button class="primary-button" id="m-submit"></button></div>
     </form>
+  </div>
+
+  {# ===== Pop-up padronizado ===== #}
+  <div class="popup-backdrop" id="popup" hidden>
+    <div class="popup" role="alertdialog" aria-modal="true">
+      <div class="popup-icon" id="popup-icon"></div>
+      <div class="popup-body">
+        <strong id="popup-title"></strong>
+        <p id="popup-msg"></p>
+      </div>
+      <div class="popup-actions">
+        <button type="button" class="secondary-button" id="popup-cancel">Cancelar</button>
+        <button type="button" class="primary-button" id="popup-ok">OK</button>
+      </div>
+    </div>
   </div>
 </div>
 <script>window.MIN_FOTOS = {{ minimo_fotos }}; window.USUARIO = {{ usuario|tojson }};</script>
