@@ -109,9 +109,15 @@ function aplicarTema(tema) {
   try { localStorage.setItem('tema', tema); } catch (e) {}
   pintarBotoesTema(tema);
 }
+let _temaTimer;
 function alternarTema() {
-  const atual = document.documentElement.getAttribute('data-theme') || 'dark';
+  const root = document.documentElement;
+  const atual = root.getAttribute('data-theme') || 'dark';
+  // Liga a transição suave só durante a troca (não afeta o carregamento nem o hover)
+  root.classList.add('theme-transition');
   aplicarTema(atual === 'light' ? 'dark' : 'light');
+  clearTimeout(_temaTimer);
+  _temaTimer = setTimeout(() => root.classList.remove('theme-transition'), 500);
 }
 document.addEventListener('click', e => {
   const btn = e.target.closest('.theme-toggle');
@@ -353,7 +359,8 @@ $('#person-form').onsubmit = async e => {
   }
   closeForm(); setPage('users');
 };
-$('#modal').onmousedown = e => e.target === e.currentTarget && closeForm();
+// Fecha só ao clicar no fundo escuro. Não pode "retornar false": isso cancelaria o foco dos campos.
+$('#modal').onmousedown = e => { if (e.target === e.currentTarget) closeForm(); };
 
 // ---- Eventos globais ----
 document.addEventListener('click', async e => {
