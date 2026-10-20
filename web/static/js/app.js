@@ -135,7 +135,7 @@ function setPage(p) {
   $$('.page').forEach(s => s.hidden = s.id !== `page-${p}`);
   $$('.nav-item').forEach(b => b.classList.toggle('active', b.dataset.go === p));
   if (p !== 'recognition') stopRecognition();
-  ({ dashboard: loadDashboard, users: loadUsers, recognition: loadFeed }[p] || (() => {}))();
+  ({ dashboard: loadDashboard, users: loadUsers, recognition: loadFeed, registros: loadRegistros }[p] || (() => {}))();
   pintarBotoesTema(document.documentElement.getAttribute('data-theme') || 'dark');
 }
 
@@ -175,6 +175,35 @@ function weekChart(sem) {
   $('#week-chart').innerHTML = `<div class="bar-chart">${barras}</div>`;
   $('#peak-title').textContent = top.valor ? `Maior pico: ${top.dia}` : 'Sem detecções na semana';
   $('#peak-sub').textContent = top.valor ? `${top.valor} detecções` : '';
+}
+// ---- Registros() ----
+const regState = { filtro: 'recentes', dados: [] };
+
+async function loadRegistros() {
+  const { data } = await api(`/api/registros?filtro=${regState.filtro}`);
+  regState.dados = data.registros || [];
+  renderRegistros();
+}
+
+function renderRegistros() {
+  const q = ($('#reg-search').value || '').toLowerCase().trim();
+  const list = regState.dados.filter(r => r[1].toLowerCase().includes(q));
+  
+  $('#reg-count').textContent = `${list.length} registro(s) exibido(s)`;
+  $('#reg-empty').hidden = list.length > 0;
+  $('#reg-rows').innerHTML = list.map(r => {
+    const [id, nome, dataHora] = r;
+    const data = dataHora.slice(0, 10);
+    const hora = dataHora.slice(11, 16);
+    const [ano, mes, dia] = data.split('-');
+    const dataFmt = `${dia}/${mes}/${ano}`;
+    return `<tr>
+      <td><div class="user-cell">${avatar(nome)}<strong>${esc(nome)}</strong></div></td>
+      <td class="muted">#${id}</td>
+      <td class="muted">${dataFmt}</td>
+      <td><time>${hora}</time></td>
+    </tr>`;
+  }).join('');
 }
 
 // ---- Users() ----
@@ -238,7 +267,9 @@ function drawFaces() {
     f.cur = f.cur.map((c, i) => c + (f.alvo[i] - c) * 0.35);
     const [x, y, w, h] = f.cur, cor = f.ok ? '#00ff00' : '#ff0000';
     ctx.strokeStyle = cor; ctx.lineWidth = 2; ctx.strokeRect(ox + x * dw, oy + y * dh, w * dw, h * dh);
-    ctx.fillStyle = cor; ctx.font = '600 14px sans-serif'; ctx.fillText(f.nome, ox + x * dw, oy + y * dh - 8);
+    ctx.fillStyle = cor; ctx.font = '600 14px sans-serif';
+    const rotulo = (f.ok && f.funcao) ? `${f.nome} · ${f.funcao}` : f.nome;
+    ctx.fillText(rotulo, ox + x * dw, oy + y * dh - 8);
   }
 }
 function atualizarFaces(novas) {
@@ -251,8 +282,18 @@ function atualizarFaces(novas) {
       const d = Math.hypot(f.alvo[0] + f.alvo[2] / 2 - cx, f.alvo[1] + f.alvo[3] / 2 - cy);
       if (d < dist) { dist = d; melhor = f; }
     }
-    if (melhor) { melhor.alvo = n.box; melhor.nome = n.nome; melhor.ok = n.ok; melhor.visto = now; usadas.add(melhor); }
-    else { const f = { cur: n.box.slice(), alvo: n.box, nome: n.nome, ok: n.ok, visto: now }; rec.faces.push(f); usadas.add(f); }
+    if (melhor) {
+      melhor.alvo = n.box;
+      melhor.nome = n.nome;
+      melhor.funcao = n.funcao;
+      melhor.ok = n.ok;
+      melhor.visto = now;
+      usadas.add(melhor);
+    } else {
+      const f = { cur: n.box.slice(), alvo: n.box, nome: n.nome, funcao: n.funcao, ok: n.ok, visto: now };
+      rec.faces.push(f);
+      usadas.add(f);
+    }
   }
 }
 function loopDesenho() { if (!rec.on) return; drawFaces(); requestAnimationFrame(loopDesenho); }
@@ -266,10 +307,13 @@ async function startRecognition() {
     const { ok, data } = await api('/api/reconhecer', { image: grab(v) });
     if (ok && rec.on) {
       atualizarFaces(data.faces || []);
-      const nome = data.reconhecidos[0];
-      $('#rec-who').hidden = !nome;
-      if (nome) {
-        $('#rec-name').textContent = nome;
+      const reconhecido = (data.faces || []).find(f => f.ok);
+      $('#rec-who').hidden = !reconhecido;
+      if (reconhecido) {
+        $('#rec-name').textContent = reconhecido.nome;
+        const funcao = reconhecido.funcao || '';
+        $('#rec-funcao').textContent = funcao;
+        $('#rec-sep').hidden = !funcao;
         $('#rec-time').textContent = new Date().toLocaleTimeString('pt-BR');
       }
     } else if (!ok) await sleep(300);
@@ -290,8 +334,6 @@ function setRecUI(on) {
 setInterval(() => state.page === 'recognition' && rec.on && loadFeed(), 5000);
 
 // ---- Settings() ----
-// O aviso "Notificações em tempo real" continua existindo para o cadastro de pessoas.
-// Nada mais é disparado na tela de reconhecimento.
 $('#cfg-notify').checked = localStorage.notify !== '0';
 $('#cfg-save').onclick = () => {
   localStorage.notify = $('#cfg-notify').checked ? '1' : '0';
@@ -299,28 +341,47 @@ $('#cfg-save').onclick = () => {
 };
 
 // ---- PersonModal() ----
-const M = { person: null, n: 0, run: false, stream: null };
+const M = { person: null, n: 0, run: false, stream: null, uploading: false };
 const getFuncao = () => ($('#f-funcao').value || '').trim() || 'Pesquisador';
+
 function dots() {
-  $('#cap-dots').innerHTML = Array.from({ length: 10 }, (_, i) => `<i class="${M.n >= (i + 1) * MIN / 10 ? 'done' : ''}"></i>`).join('') + `<span>${M.n}/${MIN} fotos</span>`;
+  const cap = Math.min(M.n, MIN);
+  const label = M.n >= MIN ? `${M.n} fotos ✓` : `${M.n}/${MIN} fotos`;
+  $('#cap-dots').innerHTML = Array.from({ length: 10 }, (_, i) =>
+    `<i class="${cap >= (i + 1) * MIN / 10 ? 'done' : ''}"></i>`
+  ).join('') + `<span>${label}</span>`;
   $('#m-submit').disabled = !($('#f-name').value.trim() && (M.person || M.n >= MIN));
 }
+
 function openForm(person) {
-  Object.assign(M, { person: person || null, n: 0, run: false });
+  Object.assign(M, {
+    person: person || null,
+    n: person ? Number(person.fotos || 0) : 0,
+    run: false,
+    uploading: false,
+  });
   const edit = !!person;
   $('#m-kicker').textContent = edit ? 'EDITAR USUÁRIO' : 'NOVO CADASTRO';
   $('#m-title').textContent = edit ? 'Editar informações' : 'Cadastrar pessoa';
-  $('#m-sub').textContent = edit ? 'Atualize o nome e a função do usuário.' : 'Adicione o nome e capture as fotos para reconhecimento.';
+  $('#m-sub').textContent = edit
+    ? 'Atualize o nome, a função, ou adicione fotos.'
+    : 'Adicione o nome, capture fotos ou envie arquivos do computador.';
   $('#m-submit').textContent = edit ? 'Salvar alterações' : 'Cadastrar pessoa';
   $('#f-name').value = person ? person.nome : ''; $('#f-name').readOnly = false;
   Object.assign($('#f-funcao'), { value: person ? person.funcao : '', readOnly: false, disabled: false });
-  $('#capture').hidden = edit; $('#cap-btn').innerHTML = `${ico('scan', 16)} Iniciar captura`;
+  $('#capture').hidden = edit;
+  $('#cap-btn').innerHTML = `${ico('scan', 16)} Iniciar captura`;
+  $('#upload-progress').hidden = true;
+  $('#upload-progress').textContent = '';
+  $('#upload-input').disabled = false;
   $('#modal').hidden = false; dots();
   if (edit) { $('#f-funcao').focus(); $('#f-funcao').select(); } else $('#f-name').focus();
 }
+
 function closeForm() {
   M.run = false; M.stream?.getTracks().forEach(t => t.stop()); M.stream = null; $('#modal').hidden = true;
 }
+
 async function capture() {
   if (M.run) { M.run = false; return; }
   const nome = $('#f-name').value.trim();
@@ -336,10 +397,90 @@ async function capture() {
     if (ok) { M.n = data.total; dots(); }
     await sleep(350);
   }
-  M.run = false; $('#cap-btn').innerHTML = M.n >= MIN ? `${ico('check', 16)} Captura concluída` : `${ico('scan', 16)} Continuar captura`;
+  M.run = false;
+  $('#cap-btn').innerHTML = M.n >= MIN
+    ? `${ico('check', 16)} Captura concluída`
+    : `${ico('scan', 16)} Continuar captura`;
 }
+
+// Upload de fotos do computador
+async function enviarFotos(arquivos) {
+  if (M.uploading) return;
+  const nome = $('#f-name').value.trim();
+  if (!nome) return popup('Informe o nome antes de enviar as fotos.', 'warn');
+
+  M.uploading = true;
+  const inp = $('#upload-input');
+  const prog = $('#upload-progress');
+  inp.disabled = true;
+  prog.hidden = false;
+  prog.textContent = `Enviando ${arquivos.length} foto(s)...`;
+
+  try {
+    const fd = new FormData();
+    fd.append('nome', nome);
+    fd.append('funcao', getFuncao());
+    arquivos.forEach(a => fd.append('fotos', a));
+
+    const r = await fetch('/api/upload_fotos', { method: 'POST', body: fd });
+    const data = await r.json().catch(() => ({}));
+
+    if (typeof data.total === 'number') {
+      M.n = data.total;
+      dots();
+    }
+
+    if (data.sucesso > 0) {
+      prog.textContent = `✓ ${data.mensagem}`;
+      setTimeout(() => { if (!M.uploading) prog.hidden = true; }, 4000);
+      const total = arquivos.length;
+      const falhas = total - data.sucesso;
+      if (falhas > 0) {
+        popup(`${data.sucesso} foto(s) adicionada(s). ${falhas} ignorada(s) (sem rosto ou arquivo inválido).`, 'warn');
+      } else {
+        popup(data.mensagem, 'success');
+      }
+    } else {
+      prog.hidden = true;
+      popup(data.mensagem || 'Nenhuma foto pôde ser processada.', 'error');
+    }
+  } catch (err) {
+    prog.hidden = true;
+    popup('Erro ao enviar as fotos.', 'error');
+  } finally {
+    M.uploading = false;
+    inp.disabled = false;
+  }
+}
+
 $('#cap-btn').onclick = capture;
 $('#f-name').oninput = dots;
+
+// Input file
+$('#upload-input').onchange = e => {
+  const arquivos = [...e.target.files].filter(f => f.type.startsWith('image/'));
+  e.target.value = '';
+  if (arquivos.length) enviarFotos(arquivos);
+};
+
+// Drag & drop
+(() => {
+  const dz = $('#upload-dropzone');
+  if (!dz) return;
+  ['dragenter', 'dragover'].forEach(ev =>
+    dz.addEventListener(ev, e => { e.preventDefault(); e.stopPropagation(); dz.classList.add('dragover'); })
+  );
+  ['dragleave', 'dragend'].forEach(ev =>
+    dz.addEventListener(ev, e => { e.preventDefault(); e.stopPropagation(); dz.classList.remove('dragover'); })
+  );
+  dz.addEventListener('drop', e => {
+    e.preventDefault(); e.stopPropagation();
+    dz.classList.remove('dragover');
+    const arquivos = [...e.dataTransfer.files].filter(f => f.type.startsWith('image/'));
+    if (arquivos.length) enviarFotos(arquivos);
+  });
+})();
+
 $('#person-form').onsubmit = async e => {
   e.preventDefault();
   const nome = $('#f-name').value.trim();
@@ -377,5 +518,18 @@ document.addEventListener('click', async e => {
 });
 $('#user-search').oninput = renderUsers;
 $('#rec-btn').onclick = () => rec.on ? stopRecognition() : startRecognition();
+
+// Filtros de registros
+document.addEventListener('click', e => {
+  const btn = e.target.closest('.filter-button');
+  if (!btn) return;
+  $$('.filter-button').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  regState.filtro = btn.dataset.filtro;
+  loadRegistros();
+});
+
+// Busca em registros
+$('#reg-search').oninput = renderRegistros;
 
 setPage('dashboard');

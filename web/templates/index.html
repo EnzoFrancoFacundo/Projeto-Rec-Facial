@@ -58,6 +58,7 @@
   <symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 8h.01M11 12h1v4h1"/></symbol>
   <symbol id="i-warn" viewBox="0 0 24 24"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z"/><path d="M12 9v4M12 17h.01"/></symbol>
   <symbol id="i-error" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="m15 9-6 6M9 9l6 6"/></symbol>
+  <symbol id="i-upload" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m17 8-5-5-5 5"/><path d="M12 3v12"/></symbol>
 </defs></svg>
 
 <div class="app-shell">
@@ -69,6 +70,7 @@
       <button class="nav-item active" data-go="dashboard">{{ ico('grid') }}<span>Dashboard</span></button>
       <button class="nav-item" data-go="recognition">{{ ico('scan') }}<span>Reconhecimento</span></button>
       <button class="nav-item" data-go="users">{{ ico('users') }}<span>Gerenciar usuários</span></button>
+      <button class="nav-item" data-go="registros">{{ ico('clock') }}<span>Registros</span></button>
       <button class="nav-item" data-go="settings">{{ ico('settings') }}<span>Configurações</span></button>
     </nav>
     <div class="side-bottom">
@@ -120,6 +122,47 @@
         </article>
       </main>
     </section>
+    
+    {# ===== Registros() ===== #}
+<section class="page" id="page-registros" hidden>
+  {{ header('Registros', 'Histórico completo de reconhecimentos faciais.') }}
+  <main class="content">
+    <div class="page-actions">
+      <div class="filter-group">
+        <button class="filter-button active" data-filtro="recentes">Recentes</button>
+        <button class="filter-button" data-filtro="7dias">Últimos 7 dias</button>
+        <button class="filter-button" data-filtro="mes">Último mês</button>
+      </div>
+      <div class="search-field">
+        {{ ico('search', 18) }}
+        <input id="reg-search" placeholder="Buscar por nome...">
+      </div>
+    </div>
+    <article class="panel table-panel">
+      <div class="table-title">
+        <div><h2>Histórico de acessos</h2><p id="reg-count"></p></div>
+      </div>
+      <div class="table-scroll">
+        <table>
+          <thead>
+            <tr>
+              <th>USUÁRIO</th>
+              <th>ID</th>
+              <th>DATA</th>
+              <th>HORA</th>
+            </tr>
+          </thead>
+          <tbody id="reg-rows"></tbody>
+        </table>
+      </div>
+      <div class="empty-state" id="reg-empty" hidden>
+        {{ ico('search', 28) }}
+        <strong>Nenhum registro encontrado</strong>
+        <p>Não há reconhecimentos no período selecionado.</p>
+      </div>
+    </article>
+  </main>
+</section>
 
     {# ===== Recognition() ===== #}
     <section class="page" id="page-recognition" hidden>
@@ -130,7 +173,14 @@
           <div class="camera-view paused" id="rec-view">
             <video id="rec-video" autoplay muted playsinline></video>
             <canvas id="rec-canvas"></canvas>
-            <div class="identified" id="rec-who" hidden><span>{{ ico('check', 18) }}</span><div><small>PESSOA IDENTIFICADA</small><strong id="rec-name"></strong><p id="rec-time"></p></div></div>
+            <div class="identified" id="rec-who" hidden>
+              <span>{{ ico('check', 18) }}</span>
+              <div>
+                <small>PESSOA IDENTIFICADA</small>
+                <strong id="rec-name"></strong>
+                <p><span id="rec-funcao"></span><span id="rec-sep" hidden> · </span><span id="rec-time"></span></p>
+              </div>
+            </div>
           </div>
           <div class="camera-controls"><div><span class="pulse"></span> <span id="rec-cam">Câmera desconectada</span></div>
             <button class="primary-button" id="rec-btn">Iniciar reconhecimento</button></div>
@@ -165,6 +215,15 @@
       </div>
       <label class="form-field"><span>Nome completo</span><input id="f-name" placeholder="Ex.: Maria da Silva" autocomplete="off"></label>
       <label class="form-field"><span>Função do usuário</span><input id="f-funcao" type="text" maxlength="60" placeholder="Ex.: Bolsista" autocomplete="off"></label>
+      <div class="upload-panel" id="upload-panel">
+        <label class="upload-dropzone" id="upload-dropzone" for="upload-input">
+          {{ ico('upload', 26) }}
+          <strong>Adicionar fotos do computador</strong>
+          <small>Selecione ou arraste uma ou várias imagens (JPG, PNG)</small>
+        </label>
+        <input type="file" id="upload-input" accept="image/*" multiple hidden>
+        <p class="upload-progress" id="upload-progress" hidden></p>
+      </div>
       <div class="modal-actions"><button type="button" class="secondary-button" data-act="close">Cancelar</button><button class="primary-button" id="m-submit"></button></div>
     </form>
   </div>

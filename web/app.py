@@ -28,10 +28,12 @@ app = Flask(
 # Chave secreta e configurações de sessão
 app.secret_key = "sua_chave_secreta_super_segura_aqui"
 app.config['SESSION_PERMANENT'] = False
+# Limite de upload (múltiplas fotos por requisição)
+app.config['MAX_CONTENT_LENGTH'] = 100 * 1024 * 1024  # 100 MB
 
 DATASET_DIR = os.path.join(BASE_DIR, "dataset")
 DB_FILE = os.path.join(BASE_DIR, "faces.db")
-MINIMO_FOTOS_REQUERIDO = 30
+MINIMO_FOTOS_REQUERIDO = 12
 TOLERANCIA = 0.48
 
 # Haar Cascade Fallback
@@ -48,6 +50,11 @@ os.makedirs(TEMPLATES_DIR, exist_ok=True)
 app.config['TEMPLATES_AUTO_RELOAD'] = True
 
 
+@app.errorhandler(413)
+def arquivo_grande(e):
+    return jsonify({"mensagem": "Arquivo(s) muito grande(s). Limite total: 100 MB."}), 413
+
+
 @app.context_processor
 def injetar_assets():
     # Acrescenta ?v=<data de modificação> nos arquivos estáticos para evitar cache velho
@@ -60,7 +67,7 @@ def injetar_assets():
     return {"asset": asset}
 
 
-ENCODINGS_CACHE = {"nomes": [], "vecs": [], "matriz": None}
+ENCODINGS_CACHE = {"nomes": [], "vecs": [], "funcoes": [], "matriz": None}
 ULTIMOS_ACESSOS = {}
 
 
@@ -135,7 +142,7 @@ def recarregar_cache_encodings():
     cursor = conn.cursor()
     # Usuários inativos não entram no cache, então não são reconhecidos
     cursor.execute("""
-        SELECT e.nome, e.encoding
+        SELECT e.nome, e.encoding, COALESCE(u.funcao, 'Pesquisador')
         FROM encodings e
         JOIN usuarios u ON u.nome = e.nome
         WHERE COALESCE(u.ativo, 1) = 1
@@ -145,20 +152,24 @@ def recarregar_cache_encodings():
 
     nomes = []
     vecs = []
-    for nome, raw_enc in rows:
+    funcoes = []
+    for nome, raw_enc, funcao in rows:
         vec = np.frombuffer(raw_enc, dtype=np.float64)
         nomes.append(nome)
         vecs.append(vec)
+        funcoes.append(funcao or "Pesquisador")
 
     ENCODINGS_CACHE["nomes"] = nomes
     ENCODINGS_CACHE["vecs"] = vecs
+    ENCODINGS_CACHE["funcoes"] = funcoes
     ENCODINGS_CACHE["matriz"] = np.array(vecs, dtype=np.float64) if vecs else None
 
 
-def adicionar_ao_cache(nome, vec):
+def adicionar_ao_cache(nome, vec, funcao="Pesquisador"):
     vec = np.asarray(vec, dtype=np.float64)
     ENCODINGS_CACHE["nomes"].append(nome)
     ENCODINGS_CACHE["vecs"].append(vec)
+    ENCODINGS_CACHE["funcoes"].append(funcao or "Pesquisador")
     if ENCODINGS_CACHE["matriz"] is None:
         ENCODINGS_CACHE["matriz"] = vec.reshape(1, -1)
     else:
@@ -261,6 +272,65 @@ def registrar_acesso(nome):
     conn.close()
 
 
+def _adicionar_frame_ao_dataset(nome, frame):
+    """
+    Processa um frame cv2 e adiciona ao dataset do usuário `nome`.
+    O usuário deve existir em `usuarios` (garantido pelo chamador).
+    Retorna dict: { ok, mensagem, total, boxes }
+    """
+    pasta_destino = os.path.join(DATASET_DIR, nome)
+    os.makedirs(pasta_destino, exist_ok=True)
+
+    small_frame = cv2.resize(frame, (0, 0), fx=0.5, fy=0.5)
+    rgb_small = cv2.cvtColor(small_frame, cv2.COLOR_BGR2RGB)
+
+    boxes_small = face_recognition.face_locations(rgb_small, model="hog")
+
+    if not boxes_small:
+        return {"ok": False, "mensagem": "Nenhum rosto detectado na imagem."}
+
+    encodings = face_recognition.face_encodings(rgb_small, boxes_small)
+
+    if not encodings:
+        return {"ok": False, "mensagem": "Não foi possível extrair características faciais."}
+
+    conn = sqlite3.connect(DB_FILE)
+    cursor = conn.cursor()
+    cursor.execute("SELECT COUNT(*) FROM encodings WHERE nome = ?", (nome,))
+    total_atual = cursor.fetchone()[0]
+    proximo_num = total_atual + 1
+
+    caminho_foto = os.path.join(pasta_destino, f"{proximo_num}.jpg")
+    cv2.imwrite(caminho_foto, frame)
+
+    cursor.execute(
+        "INSERT INTO encodings (nome, encoding, caminho_foto) VALUES (?, ?, ?)",
+        (nome, encodings[0].tobytes(), caminho_foto),
+    )
+    cursor.execute(
+        "SELECT COALESCE(ativo, 1), COALESCE(funcao, 'Pesquisador') FROM usuarios WHERE nome = ?",
+        (nome,),
+    )
+    row = cursor.fetchone()
+    conn.commit()
+    conn.close()
+
+    esta_ativo = bool(row and row[0])
+    funcao_db = (row[1] if row else None) or "Pesquisador"
+
+    if esta_ativo:
+        adicionar_ao_cache(nome, encodings[0], funcao_db)
+
+    boxes = [(top * 2, right * 2, bottom * 2, left * 2) for (top, right, bottom, left) in boxes_small]
+
+    return {
+        "ok": True,
+        "mensagem": f"Capturada foto #{proximo_num}",
+        "total": proximo_num,
+        "boxes": boxes,
+    }
+
+
 def processar_captura(nome_raw, img_b64, permitir_criar_usuario, funcao_raw=None):
     nome = normalizar_nome(nome_raw)
     if not nome:
@@ -270,72 +340,41 @@ def processar_captura(nome_raw, img_b64, permitir_criar_usuario, funcao_raw=None
     if frame is None:
         return {"status": 400, "mensagem": "Imagem inválida recebida da câmera."}
 
-    pasta_destino = os.path.join(DATASET_DIR, nome)
-    os.makedirs(pasta_destino, exist_ok=True)
-
-    small_frame = cv2.resize(frame, (0, 0), fx=0.5, fy=0.5)
-    rgb_small = cv2.cvtColor(small_frame, cv2.COLOR_BGR2RGB)
-    
-    boxes_small = face_recognition.face_locations(rgb_small, model="hog")
-
-    if not boxes_small:
-        return {
-            "status": 400,
-            "mensagem": "Procurando rosto... Mantenha-se em frente à câmera.",
-            "preview": cv2_to_base64(frame),
-        }
-
-    encodings = face_recognition.face_encodings(rgb_small, boxes_small)
-
-    if not encodings:
-        return {
-            "status": 400,
-            "mensagem": "Não foi possível extrair características faciais.",
-            "preview": cv2_to_base64(frame),
-        }
-
-    conn = sqlite3.connect(DB_FILE)
-    cursor = conn.cursor()
-
     if not permitir_criar_usuario:
+        conn = sqlite3.connect(DB_FILE)
+        cursor = conn.cursor()
         cursor.execute("SELECT 1 FROM usuarios WHERE nome = ?", (nome,))
-        if cursor.fetchone() is None:
-            conn.close()
+        existe = cursor.fetchone() is not None
+        conn.close()
+        if not existe:
             return {"status": 400, "mensagem": "Usuário não encontrado no banco de dados!"}
 
-    cursor.execute("SELECT COUNT(*) FROM encodings WHERE nome = ?", (nome,))
-    total_atual = cursor.fetchone()[0]
-    proximo_num = total_atual + 1
-
-    caminho_foto = os.path.join(pasta_destino, f"{proximo_num}.jpg")
-    cv2.imwrite(caminho_foto, frame)
-
-    blob_encoding = encodings[0].tobytes()
-    
+    pasta_destino = os.path.join(DATASET_DIR, nome)
+    os.makedirs(pasta_destino, exist_ok=True)
+    conn = sqlite3.connect(DB_FILE)
+    cursor = conn.cursor()
     cursor.execute(
         "INSERT OR IGNORE INTO usuarios (nome, pasta, funcao) VALUES (?, ?, ?)",
         (nome, pasta_destino, limpar_funcao(funcao_raw)),
     )
-    cursor.execute("SELECT COALESCE(ativo, 1) FROM usuarios WHERE nome = ?", (nome,))
-    esta_ativo = bool(cursor.fetchone()[0])
-    cursor.execute(
-        "INSERT INTO encodings (nome, encoding, caminho_foto) VALUES (?, ?, ?)",
-        (nome, blob_encoding, caminho_foto),
-    )
     conn.commit()
     conn.close()
 
-    if esta_ativo:
-        adicionar_ao_cache(nome, encodings[0])
+    resultado = _adicionar_frame_ao_dataset(nome, frame)
+    if not resultado.get("ok"):
+        return {
+            "status": 400,
+            "mensagem": resultado["mensagem"],
+            "preview": cv2_to_base64(frame),
+        }
 
-    boxes = [(top * 2, right * 2, bottom * 2, left * 2) for (top, right, bottom, left) in boxes_small]
-    rotulo = f"CAPTURADA ({proximo_num}/{MINIMO_FOTOS_REQUERIDO})"
-    frame_marcado = desenhar_marcador_opencv(frame, boxes, rotulo)
+    rotulo = f"CAPTURADA ({resultado['total']}/{MINIMO_FOTOS_REQUERIDO})"
+    frame_marcado = desenhar_marcador_opencv(frame, resultado["boxes"], rotulo)
 
     return {
         "status": 200,
-        "mensagem": f"Capturada foto #{proximo_num}",
-        "total": proximo_num,
+        "mensagem": resultado["mensagem"],
+        "total": resultado["total"],
         "preview": cv2_to_base64(frame_marcado),
     }
 
@@ -475,6 +514,8 @@ def editar_usuario():
     conn.commit()
     conn.close()
 
+    recarregar_cache_encodings()
+
     if alterados == 0:
         return jsonify({"mensagem": "Usuário não encontrado!"}), 404
     return jsonify({"mensagem": "Função atualizada com sucesso.", "funcao": funcao})
@@ -580,6 +621,68 @@ def adicionar_foto():
     return jsonify(resultado), status
 
 
+@app.route('/api/upload_fotos', methods=['POST'])
+@admin_required
+def upload_fotos():
+    """
+    Recebe 1..N arquivos de imagem (multipart/form-data) e adiciona ao dataset.
+    Campos: 'nome' (obrigatório), 'funcao' (opcional), 'fotos' (0..N arquivos).
+    """
+    nome_raw = request.form.get('nome', '')
+    funcao_raw = request.form.get('funcao')
+    nome = normalizar_nome(nome_raw)
+    if not nome:
+        return jsonify({"mensagem": "Informe o nome antes de enviar as fotos."}), 400
+
+    arquivos = request.files.getlist('fotos')
+    if not arquivos or all(not a.filename for a in arquivos):
+        return jsonify({"mensagem": "Nenhum arquivo recebido."}), 400
+
+    # Garante que o usuário existe (cria se necessário, preserva função se já existir)
+    pasta_destino = os.path.join(DATASET_DIR, nome)
+    os.makedirs(pasta_destino, exist_ok=True)
+    conn = sqlite3.connect(DB_FILE)
+    cursor = conn.cursor()
+    cursor.execute(
+        "INSERT OR IGNORE INTO usuarios (nome, pasta, funcao) VALUES (?, ?, ?)",
+        (nome, pasta_destino, limpar_funcao(funcao_raw)),
+    )
+    conn.commit()
+    conn.close()
+
+    sucesso = 0
+    detalhes = []
+    for arq in arquivos:
+        if not arq or not arq.filename:
+            continue
+        try:
+            nparr = np.frombuffer(arq.read(), np.uint8)
+            frame = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+            if frame is None:
+                detalhes.append({"arquivo": arq.filename, "ok": False,
+                                 "mensagem": "Arquivo não é uma imagem válida."})
+                continue
+            r = _adicionar_frame_ao_dataset(nome, frame)
+            detalhes.append({"arquivo": arq.filename, **r})
+            if r.get("ok"):
+                sucesso += 1
+        except Exception as e:
+            detalhes.append({"arquivo": arq.filename, "ok": False, "mensagem": str(e)})
+
+    conn = sqlite3.connect(DB_FILE)
+    cursor = conn.cursor()
+    cursor.execute("SELECT COUNT(*) FROM encodings WHERE nome = ?", (nome,))
+    total = cursor.fetchone()[0]
+    conn.close()
+
+    return jsonify({
+        "mensagem": f"{sucesso} de {len([a for a in arquivos if a and a.filename])} foto(s) adicionada(s) com sucesso.",
+        "total": total,
+        "sucesso": sucesso,
+        "detalhes": detalhes,
+    })
+
+
 @app.route('/api/reconhecer', methods=['POST'])
 @login_required
 def reconhecer():
@@ -615,6 +718,7 @@ def reconhecer():
 
         for (top, right, bottom, left), encoding_atual in zip(boxes_small, encodings_frame):
             nome = "Desconhecido"
+            funcao = ""
             reconhecido = False
 
             distancias = np.linalg.norm(matriz_conhecidos - encoding_atual, axis=1)
@@ -622,17 +726,66 @@ def reconhecer():
                 melhor_indice = int(np.argmin(distancias))
                 if distancias[melhor_indice] <= TOLERANCIA:
                     nome = nomes_conhecidos[melhor_indice]
+                    funcao = (ENCODINGS_CACHE["funcoes"][melhor_indice]
+                              if melhor_indice < len(ENCODINGS_CACHE["funcoes"])
+                              else "Pesquisador")
                     reconhecido = True
                     registrar_acesso(nome)
                     nomes_reconhecidos.append(nome)
 
             resultado.append({
                 "nome": nome,
+                "funcao": funcao,
                 "ok": reconhecido,
                 "box": [left / w_small, top / h_small, (right - left) / w_small, (bottom - top) / h_small],
             })
 
     return jsonify({"faces": resultado, "reconhecidos": nomes_reconhecidos})
+
+
+@app.route('/api/registros', methods=['GET'])
+@login_required
+def registros():
+    from datetime import date, timedelta
+    
+    filtro = request.args.get('filtro', 'recentes')
+    
+    conn = sqlite3.connect(DB_FILE)
+    cursor = conn.cursor()
+    
+    if filtro == 'recentes':
+        cursor.execute("""
+            SELECT id, nome, datetime(data_hora, 'localtime')
+            FROM acessos
+            ORDER BY id DESC
+            LIMIT 100
+        """)
+    elif filtro == '7dias':
+        cursor.execute("""
+            SELECT id, nome, datetime(data_hora, 'localtime')
+            FROM acessos
+            WHERE date(data_hora, 'localtime') >= date('now', 'localtime', '-7 days')
+            ORDER BY id DESC
+        """)
+    elif filtro == 'mes':
+        cursor.execute("""
+            SELECT id, nome, datetime(data_hora, 'localtime')
+            FROM acessos
+            WHERE date(data_hora, 'localtime') >= date('now', 'localtime', '-30 days')
+            ORDER BY id DESC
+        """)
+    else:
+        cursor.execute("""
+            SELECT id, nome, datetime(data_hora, 'localtime')
+            FROM acessos
+            ORDER BY id DESC
+            LIMIT 100
+        """)
+    
+    registros = cursor.fetchall()
+    conn.close()
+    
+    return jsonify({"registros": registros})
 
 
 @app.route('/api/renomear', methods=['POST'])
