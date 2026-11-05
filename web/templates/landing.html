@@ -1,0 +1,309 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Painel Facial · Reconhecimento facial e controle de presença</title>
+  <meta name="description" content="Cadastre pessoas, reconheça rostos pela câmera em tempo real e acompanhe o histórico de presença em um só painel.">
+  <link rel="icon" href="{{ url_for('static', filename='logo.ico') }}">
+  <script>
+    (function () {
+      try { document.documentElement.setAttribute('data-theme', localStorage.getItem('tema') || 'dark'); }
+      catch (e) { document.documentElement.setAttribute('data-theme', 'dark'); }
+    })();
+  </script>
+  <link rel="stylesheet" href="{{ asset('index.css') }}">
+  <link rel="stylesheet" href="{{ asset('landing.css') }}">
+</head>
+<body class="landing">
+  <svg width="0" height="0" style="position:absolute"><defs>
+    <symbol id="i-scan" viewBox="0 0 24 24"><path d="M3 9V5a2 2 0 0 1 2-2h4M15 3h4a2 2 0 0 1 2 2v4M21 15v4a2 2 0 0 1-2 2h-4M9 21H5a2 2 0 0 1-2-2v-4"/><circle cx="12" cy="10" r="3"/><path d="M7.5 17c.9-2 2.4-3 4.5-3s3.6 1 4.5 3"/></symbol>
+    <symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></symbol>
+    <symbol id="i-moon" viewBox="0 0 24 24"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8Z"/></symbol>
+    <symbol id="i-user" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></symbol>
+    <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></symbol>
+    <symbol id="i-upload" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m17 8-5-5-5 5"/><path d="M12 3v12"/></symbol>
+    <symbol id="i-users" viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></symbol>
+    <symbol id="i-eye" viewBox="0 0 24 24"><path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6S2 12 2 12Z"/><circle cx="12" cy="12" r="2.5"/></symbol>
+    <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6l8-3Z"/><path d="m9 12 2 2 4-4"/></symbol>
+    <symbol id="i-camera" viewBox="0 0 24 24"><path d="M4 8h3l2-3h6l2 3h3a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1Z"/><circle cx="12" cy="13" r="3.5"/></symbol>
+    <symbol id="i-chart" viewBox="0 0 24 24"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></symbol>
+    <symbol id="i-lock" viewBox="0 0 24 24"><rect x="4" y="11" width="16" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></symbol>
+    <symbol id="i-bolt" viewBox="0 0 24 24"><path d="M13 2 4 14h6l-1 8 9-12h-6l1-8Z"/></symbol>
+    <symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12 4 4L19 6"/></symbol>
+    <symbol id="i-arrow" viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></symbol>
+    <symbol id="i-key" viewBox="0 0 24 24"><circle cx="8" cy="15" r="4"/><path d="m11 12 8-8M16 4l4 4M14 6l2 2"/></symbol>
+    <symbol id="i-db" viewBox="0 0 24 24"><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v14c0 1.7 3.6 3 8 3s8-1.3 8-3V5"/><path d="M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3"/></symbol>
+    <symbol id="i-device" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8M12 16v4"/></symbol>
+    <symbol id="i-filter" viewBox="0 0 24 24"><path d="M3 5h18l-7 8v6l-4-2v-4L3 5Z"/></symbol>
+  </defs></svg>
+
+  <div class="l-bg" aria-hidden="true"><i></i><i></i><i></i></div>
+
+  <header class="l-nav">
+    <a class="l-brand" href="{{ url_for('landing') }}" aria-label="Painel Facial, início">
+      <span class="brand-mark"><svg width="25" height="25" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><use href="#i-scan"/></svg></span>
+      <span>PAINEL <span class="accent">FACIAL</span></span>
+    </a>
+    <nav class="l-nav-links" aria-label="Seções">
+      <a href="#como-funciona">Como funciona</a>
+      <a href="#recursos">Recursos</a>
+      <a href="#privacidade">Privacidade</a>
+      <a href="#faq">FAQ</a>
+    </nav>
+    <div class="l-nav-actions">
+      <a class="primary-button" href="{{ url_for('login') }}">Entrar</a>
+      <button class="icon-button theme-toggle" type="button" title="Alternar tema" aria-label="Alternar tema"></button>
+    </div>
+  </header>
+
+  <main>
+    <!-- ================= HERO ================= -->
+    <section class="l-hero">
+      <div class="l-hero-copy">
+        <span class="l-eyebrow"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><use href="#i-bolt"/></svg> Reconhecimento facial em tempo real</span>
+        <h1>Saiba quem está presente, só de olhar para a câmera.</h1>
+        <p>Cadastre pessoas com poucas fotos, ative a câmera e acompanhe cada reconhecimento no histórico de presença, tudo em um único painel.</p>
+
+        <ul class="l-hero-badges" aria-label="Destaques">
+          <li><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><use href="#i-check"/></svg> Funciona no navegador</li>
+          <li><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><use href="#i-check"/></svg> Sem instalar nada</li>
+          <li><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><use href="#i-check"/></svg> Histórico automático</li>
+        </ul>
+
+        <div class="l-cta">
+          <a class="primary-button l-big" href="{{ url_for('login') }}">Acessar o painel <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><use href="#i-arrow"/></svg></a>
+          <a class="secondary-button l-big" href="#como-funciona">Ver como funciona</a>
+        </div>
+
+        <dl class="l-stats" aria-label="Números do projeto">
+          <div><dt>Reconhecimento</dt><dd>&lt; 1s</dd></div>
+          <div><dt>Fotos por pessoa</dt><dd>1–12</dd></div>
+          <div><dt>Registro</dt><dd>100% auto</dd></div>
+        </dl>
+      </div>
+
+      <figure class="l-demo" aria-label="Demonstração ilustrativa de reconhecimento facial">
+        <div class="l-demo-top"><span class="l-live"><i></i>AO VIVO</span><span>CAM 01</span></div>
+        <div class="l-demo-view">
+          <svg class="l-person" viewBox="0 0 200 240" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true">
+            <ellipse cx="100" cy="92" rx="38" ry="48"/>
+            <path d="M22 240c4-46 34-66 78-66s74 20 78 66"/>
+            <path d="M86 188l14 16 14-16"/>
+          </svg>
+          <div class="l-box">
+            <i class="tl"></i><i class="tr"></i><i class="bl"></i><i class="br"></i>
+            <b class="l-dot" style="left:30%;top:38%;--k:0"></b><b class="l-dot" style="left:70%;top:38%;--k:1"></b>
+            <b class="l-dot" style="left:50%;top:56%;--k:2"></b>
+            <b class="l-dot" style="left:36%;top:76%;--k:3"></b><b class="l-dot" style="left:64%;top:76%;--k:4"></b>
+            <span class="l-scan"></span>
+            <span class="l-tag l-tag-a">Analisando…</span>
+            <span class="l-tag l-tag-b">Maria · Bolsista</span>
+          </div>
+          <div class="l-ident"><span class="l-ok">✓</span><div><small>Pessoa identificada</small><strong>Maria</strong></div></div>
+        </div>
+        <figcaption>Exemplo ilustrativo. Nenhuma imagem real é exibida.</figcaption>
+      </figure>
+    </section>
+
+    <!-- ================= COMO FUNCIONA ================= -->
+    <section class="l-section l-steps-section" id="como-funciona">
+      <header class="l-section-head">
+        <span class="l-kicker">Fluxo em 3 etapas</span>
+        <h2>Do cadastro ao registro em três passos</h2>
+        <p class="l-sub">Cada etapa é curta e independente: você pode começar pelo cadastro, testar o reconhecimento e só então consultar os relatórios.</p>
+      </header>
+
+      <ol class="l-steps">
+        <li class="l-step" style="--tone:#31c8a6" data-step="01">
+          <span class="l-step-ico" aria-hidden="true"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-user"/></svg></span>
+          <span class="l-step-n">1</span>
+          <span class="l-step-tag">Cadastro</span>
+          <h3>Cadastre a pessoa</h3>
+          <p>Informe nome e função. Capture fotos pela webcam ou envie imagens do computador.</p>
+          <ul class="l-step-list">
+            <li>Arraste várias fotos de uma vez</li>
+            <li>Recorte automático do rosto</li>
+          </ul>
+          <span class="l-step-foot"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><use href="#i-camera"/></svg> Webcam ou upload</span>
+        </li>
+        <li class="l-step" style="--tone:#7cc7ff" data-step="02">
+          <span class="l-step-ico" aria-hidden="true"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-scan"/></svg></span>
+          <span class="l-step-n">2</span>
+          <span class="l-step-tag">Reconhecimento</span>
+          <h3>Ative o reconhecimento</h3>
+          <p>A câmera detecta os rostos e mostra o nome de quem foi identificado, ou Desconhecido.</p>
+          <ul class="l-step-list">
+            <li>Marcação em tempo real</li>
+            <li>Confiança exibida por detecção</li>
+          </ul>
+          <span class="l-step-foot"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><use href="#i-bolt"/></svg> Resposta em menos de 1s</span>
+        </li>
+        <li class="l-step" style="--tone:#ffc861" data-step="03">
+          <span class="l-step-ico" aria-hidden="true"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-chart"/></svg></span>
+          <span class="l-step-n">3</span>
+          <span class="l-step-tag">Relatórios</span>
+          <h3>Consulte os registros</h3>
+          <p>Cada reconhecimento fica salvo com data e hora. Filtre por período ou busque por nome.</p>
+          <ul class="l-step-list">
+            <li>Resumo diário e gráfico semanal</li>
+            <li>Busca por pessoa, data ou função</li>
+          </ul>
+          <span class="l-step-foot"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><use href="#i-filter"/></svg> Filtros por período</span>
+        </li>
+      </ol>
+    </section>
+
+    <!-- ================= RECURSOS ================= -->
+    <section class="l-section l-features-section" id="recursos">
+      <header class="l-section-head">
+        <span class="l-kicker">Recursos</span>
+        <h2>O que você encontra no painel</h2>
+        <p class="l-sub">Ferramentas pensadas para o dia a dia de quem acompanha presença: reconhecer, cadastrar e relatar — sem complexidade.</p>
+      </header>
+
+      <ul class="l-features">
+        <li class="l-feature" style="--tone:#31c8a6">
+          <div class="l-feature-top">
+            <span class="l-feature-ico" aria-hidden="true"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-eye"/></svg></span>
+            <span class="l-feature-tag">Tempo real</span>
+          </div>
+          <strong>Reconhecimento em tempo real</strong>
+          <p>Identificação direto no navegador, com a função de cada pessoa exibida ao lado do nome.</p>
+          <div class="l-feature-mock" aria-hidden="true"><span class="m-box"></span><span class="m-name">Maria · Bolsista</span></div>
+        </li>
+        <li class="l-feature" style="--tone:#7cc7ff">
+          <div class="l-feature-top">
+            <span class="l-feature-ico" aria-hidden="true"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-upload"/></svg></span>
+            <span class="l-feature-tag">Cadastro</span>
+          </div>
+          <strong>Fotos pela câmera ou por upload</strong>
+          <p>Envie várias imagens de uma vez, arrastando os arquivos para a janela de cadastro.</p>
+          <div class="l-feature-mock" aria-hidden="true"><span class="m-drop">Arraste e solte</span><span class="m-mini"></span><span class="m-mini"></span></div>
+        </li>
+        <li class="l-feature" style="--tone:#ffc861">
+          <div class="l-feature-top">
+            <span class="l-feature-ico" aria-hidden="true"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-clock"/></svg></span>
+            <span class="l-feature-tag">Relatórios</span>
+          </div>
+          <strong>Histórico de presença</strong>
+          <p>Resumo diário, gráfico da semana e lista completa de acessos por período.</p>
+          <div class="l-feature-mock" aria-hidden="true"><span class="m-bar" style="--h:40%"></span><span class="m-bar" style="--h:70%"></span><span class="m-bar" style="--h:55%"></span><span class="m-bar" style="--h:90%"></span><span class="m-bar" style="--h:65%"></span></div>
+        </li>
+        <li class="l-feature" style="--tone:#c79bff">
+          <div class="l-feature-top">
+            <span class="l-feature-ico" aria-hidden="true"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-users"/></svg></span>
+            <span class="l-feature-tag">Permissões</span>
+          </div>
+          <strong>Acesso por perfil</strong>
+          <p>Administradores gerenciam pessoas e fotos.</p>
+          <div class="l-feature-mock" aria-hidden="true"><span class="m-role">Admin</span><span class="m-role m-role--alt">Operador</span></div>
+        </li>
+      </ul>
+    </section>
+
+    <!-- ================= PRIVACIDADE ================= -->
+    <section class="l-section l-priv" id="privacidade">
+      <header class="l-section-head">
+        <span class="l-kicker">Privacidade</span>
+        <h2>Rostos são dados sensíveis. Levamos isso a sério.</h2>
+        <p class="l-sub">O processamento acontece no seu ambiente, com controle de acesso e sem exibir imagens reais na página pública.</p>
+      </header>
+      <ul class="l-priv-grid">
+        <li style="--tone:#31c8a6"><span class="l-priv-ico" aria-hidden="true"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><use href="#i-lock"/></svg></span><strong>Login obrigatório</strong><p>O painel exige usuário e senha; a landing não expõe dados.</p></li>
+        <li style="--tone:#7cc7ff"><span class="l-priv-ico" aria-hidden="true"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><use href="#i-shield"/></svg></span><strong>Perfis controlados</strong><p>Somente administradores gerenciam pessoas e fotos.</p></li>
+        <li style="--tone:#ffc861"><span class="l-priv-ico" aria-hidden="true"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><use href="#i-db"/></svg></span><strong>Histórico auditável</strong><p>Cada reconhecimento é registrado com data e hora.</p></li>
+        <li style="--tone:#c79bff"><span class="l-priv-ico" aria-hidden="true"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><use href="#i-device"/></svg></span><strong>No navegador</strong><p>Interface web sem instalar aplicativos nos aparelhos.</p></li>
+      </ul>
+    </section>
+
+    <!-- ================= FAQ ================= -->
+    <section class="l-section l-faq" id="faq">
+      <header class="l-section-head">
+        <span class="l-kicker">Dúvidas</span>
+        <h2>Perguntas frequentes</h2>
+      </header>
+      <details class="l-details" open>
+        <summary>Preciso instalar algo para usar?<span class="l-chev" aria-hidden="true"></span></summary>
+        <p>Não. O painel roda no navegador. Basta fazer login e permitir o acesso à câmera quando solicitado.</p>
+      </details>
+      <details class="l-details">
+        <summary>Quantas fotos preciso para cadastrar uma pessoa?<span class="l-chev" aria-hidden="true"></span></summary>
+        <p>Uma a doze fotos costuma ser suficiente. Variar ângulo e iluminação melhora a precisão do reconhecimento.</p>
+      </details>
+      <details class="l-details">
+        <summary>O que acontece quando o rosto não é reconhecido?<span class="l-chev" aria-hidden="true"></span></summary>
+        <p>A detecção aparece como <em>Desconhecido</em> e fica registrada no histórico para conferência posterior.</p>
+      </details>
+      <details class="l-details">
+        <summary>Quem pode gerenciar pessoas e fotos?<span class="l-chev" aria-hidden="true"></span></summary>
+        <p>Usuários com perfil de administrador.</p>
+      </details>
+    </section>
+
+    <!-- ================= CTA FINAL ================= -->
+    <section class="l-final">
+      <span class="l-kicker">Pronto?</span>
+      <h2>Pronto para começar?</h2>
+      <p>Entre com seu usuário e senha para abrir o painel.</p>
+      <div class="l-final-actions">
+        <a class="primary-button l-big" href="{{ url_for('login') }}">Entrar <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><use href="#i-arrow"/></svg></a>
+        <a class="secondary-button l-big" href="#faq">Tirar dúvidas</a>
+      </div>
+      <p class="l-final-note"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><use href="#i-key"/></svg> Acesso restrito a usuários cadastrados.</p>
+    </section>
+  </main>
+
+  <footer class="l-footer">
+    <span>Painel Facial</span>
+    <span>Projeto de reconhecimento facial com Python, Flask e OpenCV by Enzo & Fabrício.</span>
+  </footer>
+
+  <script>
+    (function () {
+      var root = document.documentElement, timer;
+      function icone(n) { return '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><use href="#i-' + n + '"/></svg>'; }
+      function pintar(t) { document.querySelectorAll('.theme-toggle').forEach(function (b) { b.innerHTML = t === 'light' ? icone('moon') : icone('sun'); }); }
+      document.querySelectorAll('.theme-toggle').forEach(function (b) {
+        b.addEventListener('click', function () {
+          var novo = (root.getAttribute('data-theme') || 'dark') === 'light' ? 'dark' : 'light';
+          root.classList.add('theme-transition');
+          root.setAttribute('data-theme', novo);
+          try { localStorage.setItem('tema', novo); } catch (e) {}
+          pintar(novo);
+          clearTimeout(timer);
+          timer = setTimeout(function () { root.classList.remove('theme-transition'); }, 500);
+        });
+      });
+      pintar(root.getAttribute('data-theme') || 'dark');
+    })();
+  </script>
+  <script>
+    (function () {
+      var reduce = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
+      var nav = document.querySelector('.l-nav');
+      function onScroll() { nav.classList.toggle('scrolled', window.scrollY > 10); }
+      window.addEventListener('scroll', onScroll, { passive: true }); onScroll();
+      if (reduce || !('IntersectionObserver' in window)) return;
+
+      // Título entra palavra por palavra
+      var h = document.querySelector('.l-hero h1');
+      var txt = h.textContent.trim();
+      h.setAttribute('aria-label', txt);
+      h.innerHTML = txt.split(/\s+/).map(function (w, i) {
+        return '<span class="l-w" aria-hidden="true" style="--i:' + i + '">' + w + '</span>';
+      }).join(' ');
+
+      // Revelar ao rolar, com atraso escalonado entre irmãos
+      var io = new IntersectionObserver(function (es) {
+        es.forEach(function (e) { if (e.isIntersecting) { e.target.classList.add('in'); io.unobserve(e.target); } });
+      }, { threshold: 0.15 });
+      document.querySelectorAll('.l-section-head > *, .l-steps li, .l-features li, .l-priv-grid li, .l-details, .l-final > *').forEach(function (el) {
+        el.style.setProperty('--d', (Array.prototype.indexOf.call(el.parentNode.children, el) * 110) + 'ms');
+        el.classList.add('reveal');
+        io.observe(el);
+      });
+    })();
+  </script>
+</body>
+</html>
