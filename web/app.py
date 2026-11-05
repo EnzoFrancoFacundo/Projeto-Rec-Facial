@@ -9,8 +9,10 @@ import shutil
 import time
 import numpy as np
 import face_recognition
-from flask import Flask, render_template, request, jsonify, session, redirect, url_for
+from flask import Flask, render_template, request, jsonify, session, redirect, url_for, send_file, Response
 from functools import wraps
+import hmac
+from werkzeug.security import generate_password_hash, check_password_hash
 
 warnings.filterwarnings("ignore", category=UserWarning)
 
@@ -79,6 +81,45 @@ def normalizar_nome(nome):
     return re.sub(r'[^a-z0-9_]', '', nome_limpo)
 
 
+# --- SENHAS (armazenadas somente em hash) ---
+
+SENHA_PADRAO = "123456"
+
+
+def gerar_hash(senha):
+    # pbkdf2:sha256 funciona em qualquer build do Python (scrypt depende do OpenSSL)
+    return generate_password_hash(str(senha), method="pbkdf2:sha256")
+
+
+def _e_hash(valor):
+    """True se o valor já está no formato de hash do Werkzeug (metodo:params$salt$hash)."""
+    return (
+        isinstance(valor, str)
+        and valor.startswith(("pbkdf2:", "scrypt:"))
+        and valor.count("$") == 2
+    )
+
+
+def verificar_senha(armazenada, digitada):
+    """
+    Retorna (ok, legado). `legado` = True quando a senha ainda estava em texto puro
+    no banco (e deve ser convertida para hash após o login bem-sucedido).
+    """
+    if not armazenada:
+        return False, False
+    if _e_hash(armazenada):
+        try:
+            return check_password_hash(armazenada, str(digitada)), False
+        except Exception:
+            return False, False
+    ok = hmac.compare_digest(str(armazenada).encode("utf-8"), str(digitada).encode("utf-8"))
+    return ok, True
+
+
+# Hash da senha padrão calculado uma única vez (usado ao criar usuários pela captura/upload)
+SENHA_PADRAO_HASH = gerar_hash(SENHA_PADRAO)
+
+
 def init_db():
     conn = sqlite3.connect(DB_FILE)
     cursor = conn.cursor()
@@ -127,11 +168,18 @@ def init_db():
         pasta_admin = os.path.join(DATASET_DIR, "admin")
         os.makedirs(pasta_admin, exist_ok=True)
         cursor.execute(
-            "INSERT INTO usuarios (nome, pasta, senha, role, funcao) VALUES ('admin', ?, 'admin123', 'admin', 'Administrador')",
-            (pasta_admin,)
+            "INSERT INTO usuarios (nome, pasta, senha, role, funcao) VALUES ('admin', ?, ?, 'admin', 'Administrador')",
+            (pasta_admin, gerar_hash("admin123"))
         )
     else:
         cursor.execute("UPDATE usuarios SET role = 'admin', ativo = 1 WHERE nome = 'admin'")
+
+    # Migração: converte senhas ainda em texto puro para hash (idempotente).
+    # Senhas NULL são mantidas como estão (nunca permitiram login).
+    cursor.execute("SELECT id, senha FROM usuarios WHERE senha IS NOT NULL")
+    for uid, senha_db in cursor.fetchall():
+        if not _e_hash(senha_db):
+            cursor.execute("UPDATE usuarios SET senha = ? WHERE id = ?", (gerar_hash(senha_db), uid))
 
     conn.commit()
     conn.close()
@@ -300,7 +348,11 @@ def _adicionar_frame_ao_dataset(nome, frame):
     total_atual = cursor.fetchone()[0]
     proximo_num = total_atual + 1
 
-    caminho_foto = os.path.join(pasta_destino, f"{proximo_num}.jpg")
+    # Não sobrescreve uma foto existente (ocorre quando fotos foram excluídas pela galeria)
+    num_arquivo = proximo_num
+    while os.path.exists(os.path.join(pasta_destino, f"{num_arquivo}.jpg")):
+        num_arquivo += 1
+    caminho_foto = os.path.join(pasta_destino, f"{num_arquivo}.jpg")
     cv2.imwrite(caminho_foto, frame)
 
     cursor.execute(
@@ -354,8 +406,8 @@ def processar_captura(nome_raw, img_b64, permitir_criar_usuario, funcao_raw=None
     conn = sqlite3.connect(DB_FILE)
     cursor = conn.cursor()
     cursor.execute(
-        "INSERT OR IGNORE INTO usuarios (nome, pasta, funcao) VALUES (?, ?, ?)",
-        (nome, pasta_destino, limpar_funcao(funcao_raw)),
+        "INSERT OR IGNORE INTO usuarios (nome, pasta, senha, funcao) VALUES (?, ?, ?, ?)",
+        (nome, pasta_destino, SENHA_PADRAO_HASH, limpar_funcao(funcao_raw)),
     )
     conn.commit()
     conn.close()
@@ -401,10 +453,21 @@ def login_senha():
     conn = sqlite3.connect(DB_FILE)
     cursor = conn.cursor()
     cursor.execute(
-        "SELECT nome, role, COALESCE(ativo, 1) FROM usuarios WHERE (nome = ? OR nome = ?) AND senha = ?", 
-        (usuario_input, usuario_raw, senha_input)
+        "SELECT id, nome, role, COALESCE(ativo, 1), senha FROM usuarios WHERE nome = ? OR nome = ?",
+        (usuario_input, usuario_raw)
     )
-    user = cursor.fetchone()
+    candidatos = cursor.fetchall()
+
+    user = None
+    for uid, c_nome, c_role, c_ativo, c_senha in candidatos:
+        senha_ok, legado = verificar_senha(c_senha, senha_input)
+        if senha_ok:
+            user = (c_nome, c_role, c_ativo)
+            if legado:
+                # Segurança extra: converte uma senha antiga em texto puro para hash
+                cursor.execute("UPDATE usuarios SET senha = ? WHERE id = ?", (gerar_hash(senha_input), uid))
+                conn.commit()
+            break
     conn.close()
 
     if not user:
@@ -459,12 +522,12 @@ def cadastrar_usuario():
         if usuario_existente:
             cursor.execute(
                 "UPDATE usuarios SET senha = ?, role = ?, pasta = ?, funcao = ? WHERE nome = ?",
-                (senha, role, pasta_usuario, funcao, usuario_norm)
+                (gerar_hash(senha), role, pasta_usuario, funcao, usuario_norm)
             )
         else:
             cursor.execute(
                 "INSERT INTO usuarios (nome, pasta, senha, role, funcao) VALUES (?, ?, ?, ?, ?)",
-                (usuario_norm, pasta_usuario, senha, role, funcao)
+                (usuario_norm, pasta_usuario, gerar_hash(senha), role, funcao)
             )
 
         conn.commit()
@@ -480,10 +543,18 @@ def logout():
     session.clear()
     return redirect(url_for('login'))
 
+# --- LANDING PAGE (pública) ---
+
+@app.route('/')
+def landing():
+    # Quem já está logado e ativo vai direto para o painel
+    if 'usuario' in session and usuario_esta_ativo(session['usuario']):
+        return redirect(url_for('index'))
+    return render_template('landing.html')
 
 # --- ROTA PRINCIPAL DA APLICAÇÃO ---
 
-@app.route('/')
+@app.route('/painel')
 @login_required
 def index():
     user_role = session.get('role', 'user')
@@ -644,8 +715,8 @@ def upload_fotos():
     conn = sqlite3.connect(DB_FILE)
     cursor = conn.cursor()
     cursor.execute(
-        "INSERT OR IGNORE INTO usuarios (nome, pasta, funcao) VALUES (?, ?, ?)",
-        (nome, pasta_destino, limpar_funcao(funcao_raw)),
+        "INSERT OR IGNORE INTO usuarios (nome, pasta, senha, funcao) VALUES (?, ?, ?, ?)",
+        (nome, pasta_destino, SENHA_PADRAO_HASH, limpar_funcao(funcao_raw)),
     )
     conn.commit()
     conn.close()
@@ -786,6 +857,102 @@ def registros():
     conn.close()
     
     return jsonify({"registros": registros})
+
+
+# --- GALERIA DE FOTOS (somente admin) ---
+
+def _caminho_foto_seguro(nome, caminho_db):
+    """Resolve o arquivo sempre dentro de dataset/<nome>/ (funciona mesmo após renomear a pasta)."""
+    arquivo = os.path.basename(caminho_db or "")
+    if not arquivo:
+        return None
+    return os.path.join(DATASET_DIR, nome, arquivo)
+
+
+@app.route('/api/fotos', methods=['GET'])
+@admin_required
+def listar_fotos():
+    nome = normalizar_nome(request.args.get('nome'))
+    if not nome:
+        return jsonify({"mensagem": "Usuário inválido!"}), 400
+
+    conn = sqlite3.connect(DB_FILE)
+    cursor = conn.cursor()
+    cursor.execute("SELECT id FROM encodings WHERE nome = ? ORDER BY id", (nome,))
+    ids = [r[0] for r in cursor.fetchall()]
+    conn.close()
+
+    fotos = [{"id": fid, "numero": i} for i, fid in enumerate(ids, start=1)]
+    return jsonify({"nome": nome, "fotos": fotos})
+
+
+@app.route('/api/foto/<int:foto_id>', methods=['GET'])
+@admin_required
+def servir_foto(foto_id):
+    conn = sqlite3.connect(DB_FILE)
+    cursor = conn.cursor()
+    cursor.execute("SELECT nome, caminho_foto FROM encodings WHERE id = ?", (foto_id,))
+    row = cursor.fetchone()
+    conn.close()
+
+    if not row:
+        return jsonify({"mensagem": "Foto não encontrada."}), 404
+
+    caminho = _caminho_foto_seguro(row[0], row[1])
+    if not caminho or not os.path.isfile(caminho):
+        return jsonify({"mensagem": "Arquivo da foto não encontrado."}), 404
+
+    # ?full=1 devolve a imagem original (ampliar); sem isso, devolve uma miniatura leve
+    if request.args.get('full'):
+        return send_file(caminho, mimetype='image/jpeg', max_age=300)
+
+    img = cv2.imread(caminho)
+    if img is None:
+        return jsonify({"mensagem": "Imagem inválida."}), 404
+    h, w = img.shape[:2]
+    largura = 240
+    if w > largura:
+        img = cv2.resize(img, (largura, max(1, int(h * largura / w))), interpolation=cv2.INTER_AREA)
+    ok, buf = cv2.imencode('.jpg', img, [cv2.IMWRITE_JPEG_QUALITY, 80])
+    if not ok:
+        return jsonify({"mensagem": "Falha ao gerar miniatura."}), 500
+    return Response(buf.tobytes(), mimetype='image/jpeg', headers={"Cache-Control": "private, max-age=300"})
+
+
+@app.route('/api/deletar_foto', methods=['POST'])
+@admin_required
+def deletar_foto():
+    data = request.json or {}
+    try:
+        foto_id = int(data.get('id'))
+    except (TypeError, ValueError):
+        return jsonify({"mensagem": "Foto inválida!"}), 400
+
+    conn = sqlite3.connect(DB_FILE)
+    cursor = conn.cursor()
+    cursor.execute("SELECT nome, caminho_foto FROM encodings WHERE id = ?", (foto_id,))
+    row = cursor.fetchone()
+    if not row:
+        conn.close()
+        return jsonify({"mensagem": "Foto não encontrada."}), 404
+
+    nome, caminho_db = row
+    cursor.execute("DELETE FROM encodings WHERE id = ?", (foto_id,))
+    conn.commit()
+    cursor.execute("SELECT COUNT(*) FROM encodings WHERE nome = ?", (nome,))
+    total = cursor.fetchone()[0]
+    conn.close()
+
+    caminho = _caminho_foto_seguro(nome, caminho_db)
+    if caminho and os.path.isfile(caminho):
+        try:
+            os.remove(caminho)
+        except OSError:
+            pass
+
+    # Remove o encoding da foto também do cache usado pelo reconhecimento
+    recarregar_cache_encodings()
+    return jsonify({"mensagem": "Foto excluída com sucesso.", "nome": nome, "total": total})
 
 
 @app.route('/api/renomear', methods=['POST'])
