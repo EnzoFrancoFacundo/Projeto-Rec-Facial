@@ -1,0 +1,507 @@
+/* ===== Landing page (usa as variáveis de tema do index.css) ===== */
+body.landing { min-height: 100vh; background: var(--bg); color: var(--text); scroll-behavior: smooth; }
+html { scroll-behavior: smooth; scroll-padding-top: 90px; }
+.landing a { text-decoration: none; }
+.landing :focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 6px; }
+
+/* Navegação */
+.l-nav { position: sticky; top: 0; z-index: 30; height: 70px; padding: 0 clamp(18px, 5vw, 56px); display: flex; align-items: center; justify-content: space-between; gap: 20px; background: var(--topbar-bg); border-bottom: 1px solid var(--border-soft); }
+.l-brand { display: flex; align-items: center; gap: 11px; color: var(--text); font-size: 17px; font-weight: 700; letter-spacing: .6px; }
+.l-brand .accent { color: var(--accent); }
+.l-nav-links { display: flex; gap: 28px; margin-left: auto; }
+.l-nav-links a { color: var(--text-soft); font-size: 13px; }
+.l-nav-links a:hover { color: var(--text); }
+.l-nav-actions { display: flex; align-items: center; gap: 12px; }
+.l-nav-actions .primary-button { padding: 10px 20px; }
+
+/* Botões grandes */
+.landing .primary-button, .landing .secondary-button { text-decoration: none; }
+.l-big { padding: 14px 24px; font-size: 14px; border-radius: 8px; display: inline-flex; align-items: center; justify-content: center; gap: 8px; }
+.landing .secondary-button.l-big { display: inline-flex; align-items: center; justify-content: center; }
+
+/* Hero */
+.l-hero { max-width: 1180px; margin: 0 auto; padding: clamp(40px, 8vw, 96px) clamp(18px, 5vw, 56px); display: grid; grid-template-columns: minmax(0, 1.05fr) minmax(0, .95fr); gap: clamp(32px, 6vw, 80px); align-items: center; }
+.l-hero h1 { margin: 0; font-size: clamp(34px, 5vw, 56px); line-height: 1.08; letter-spacing: -1.4px; font-weight: 700; color: var(--text); max-width: 15ch; }
+.l-hero p { margin: 22px 0 0; max-width: 46ch; font-size: 17px; line-height: 1.6; color: var(--text-soft); }
+.l-cta { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 32px; }
+
+/* Demo da câmera */
+.l-demo { margin: 0; border: 1px solid var(--border); border-radius: 14px; overflow: hidden; background: #071014; box-shadow: 0 24px 60px #0006; }
+.l-demo figcaption { padding: 10px 18px; font-size: 11px; color: #8999af; background: #0A1F24; }
+.l-demo-top { height: 44px; padding: 0 18px; display: flex; align-items: center; justify-content: space-between; background: #0A1F24; color: #8ba099; font-size: 10px; letter-spacing: .6px; }
+.l-live { display: flex; align-items: center; gap: 6px; color: #ff9b94; }
+.l-live i { width: 6px; height: 6px; border-radius: 50%; background: currentColor; animation: l-blink 1.4s ease-in-out infinite; }
+.l-demo-view { position: relative; aspect-ratio: 4 / 4.2; background: radial-gradient(ellipse at 50% 35%, #12474d 0%, #0F3A3F 45%, #0A1F24 100%); overflow: hidden; }
+.l-person { position: absolute; left: 50%; bottom: -2%; width: 62%; transform: translateX(-50%); color: #B8F2E6; opacity: .35; }
+.l-box { position: absolute; left: 31%; top: 14%; width: 38%; height: 46%; border: 1px solid #00ff0088; animation: l-track 7s ease-in-out infinite; }
+.l-box i { position: absolute; width: 20px; height: 20px; border: 0 solid #00ff00; }
+.l-box .tl { left: -2px; top: -2px; border-left-width: 3px; border-top-width: 3px; }
+.l-box .tr { right: -2px; top: -2px; border-right-width: 3px; border-top-width: 3px; }
+.l-box .bl { left: -2px; bottom: -2px; border-left-width: 3px; border-bottom-width: 3px; }
+.l-box .br { right: -2px; bottom: -2px; border-right-width: 3px; border-bottom-width: 3px; }
+.l-scan { position: absolute; left: 0; right: 0; height: 2px; background: linear-gradient(90deg, transparent, #B8F2E6, transparent); opacity: .8; animation: l-sweep 2.6s linear infinite; }
+.l-tag { position: absolute; left: -1px; bottom: calc(100% + 8px); font-size: 14px; font-weight: 600; white-space: nowrap; }
+.l-tag-a { color: #ff4d4d; animation: l-a 7s steps(1) infinite; }
+.l-tag-b { color: #00ff00; animation: l-b 7s steps(1) infinite; }
+.l-ident { position: absolute; left: 16px; right: 16px; bottom: 16px; display: flex; align-items: center; gap: 12px; padding: 12px 14px; border-radius: 10px; background: #0b1e19db; border: 1px solid #6ed9bf40; backdrop-filter: blur(8px); color: #fff; animation: l-b 7s steps(1) infinite; }
+.l-ok { width: 32px; height: 32px; border-radius: 50%; display: grid; place-items: center; background: #31c8a6; color: #0b2b23; font-weight: 700; }
+.l-ident div { display: flex; flex-direction: column; }
+.l-ident small { color: #55d7b9; font-size: 10px; }
+.l-ident strong { font-size: 15px; }
+.l-box { --c: #00ff00; }
+
+@keyframes l-sweep { from { top: 0; } to { top: 100%; } }
+@keyframes l-blink { 50% { opacity: .25; } }
+@keyframes l-track { 0%, 100% { transform: translate(0, 0); } 50% { transform: translate(3%, 2%); } }
+@keyframes l-a { 0% { opacity: 1; } 40% { opacity: 0; } 100% { opacity: 0; } }
+@keyframes l-b { 0% { opacity: 0; } 40% { opacity: 1; } 92% { opacity: 1; } 100% { opacity: 0; } }
+
+/* Seções */
+.l-section { max-width: 1180px; margin: 0 auto; padding: clamp(40px, 6vw, 72px) clamp(18px, 5vw, 56px); border-top: 1px solid var(--border-soft); }
+.l-section h2, .l-final h2 { margin: 0 0 32px; font-size: clamp(24px, 3vw, 32px); letter-spacing: -.6px; color: var(--text); }
+.l-steps { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(3, 1fr); gap: 0; border: 1px solid var(--border); border-radius: 12px; overflow: hidden; background: var(--bg-elev); }
+.l-steps li { padding: 28px; border-left: 1px solid var(--border); }
+.l-steps li:first-child { border-left: 0; }
+.l-step-n { display: grid; place-items: center; width: 34px; height: 34px; border-radius: 50%; border: 1px solid var(--accent); color: var(--accent); font-weight: 700; font-size: 14px; }
+.l-steps h3 { margin: 18px 0 8px; font-size: 17px; color: var(--text); }
+.l-steps p, .l-features p { margin: 0; font-size: 14px; line-height: 1.6; color: var(--text-soft); max-width: 40ch; }
+
+.l-features { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: 1fr 1fr; gap: 32px 56px; }
+.l-features li { display: flex; gap: 16px; align-items: flex-start; }
+.l-features svg { flex: none; margin-top: 2px; color: var(--accent); }
+.l-features strong { display: block; margin-bottom: 6px; font-size: 16px; color: var(--text); }
+
+.l-final { max-width: 1180px; margin: 0 auto; padding: clamp(48px, 8vw, 96px) clamp(18px, 5vw, 56px); border-top: 1px solid var(--border-soft); text-align: left; }
+.l-final h2 { margin-bottom: 10px; }
+.l-final p { margin: 0 0 24px; color: var(--text-soft); font-size: 15px; }
+
+.l-footer { padding: 24px clamp(18px, 5vw, 56px); border-top: 1px solid var(--border-soft); display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px 24px; font-size: 12px; color: var(--text-soft); }
+
+/* Tema claro */
+[data-theme="light"] .l-nav-links a:hover { color: #243137; }
+[data-theme="light"] .l-hero h1 { color: #243137; }
+[data-theme="light"] .l-step-n { border-color: #243137; color: #243137; }
+[data-theme="light"] .l-features svg { color: #243137; }
+[data-theme="light"] .l-brand { color: #243137; }
+[data-theme="light"] .l-brand .accent { color: #5d6b74; }
+[data-theme="light"] .l-brand .brand-mark { color: #fff; background: #243137; border-color: #243137; box-shadow: none; }
+[data-theme="light"] .l-demo { box-shadow: 0 24px 60px #24313740; }
+[data-theme="light"] .landing .secondary-button { background: #f6fbfd; border-color: #9db5c1; color: #243137; }
+[data-theme="light"] .l-steps { border-color: #c2dfe3; }
+[data-theme="light"] .l-steps li { border-color: #c2dfe3; }
+
+/* Mobile */
+@media (max-width: 900px) {
+  .l-hero { grid-template-columns: 1fr; }
+  .l-hero h1 { max-width: 20ch; }
+  .l-steps { grid-template-columns: 1fr; }
+  .l-steps li { border-left: 0; border-top: 1px solid var(--border); }
+  .l-steps li:first-child { border-top: 0; }
+  .l-features { grid-template-columns: 1fr; }
+}
+@media (max-width: 560px) {
+  .l-nav-links { display: none; }
+  .l-nav-actions { margin-left: auto; }
+  .l-cta .l-big { flex: 1; }
+}
+
+/* Movimento reduzido: mostra o estado "identificado" parado */
+@media (prefers-reduced-motion: reduce) {
+  .l-box, .l-scan, .l-live i, .l-tag-a { animation: none; }
+  .l-tag-a { opacity: 0; }
+  .l-tag-b, .l-ident { animation: none; opacity: 1; }
+  html, body.landing { scroll-behavior: auto; }
+}
+
+
+/* ===================== Animações extras ===================== */
+
+.l-bg { position: fixed; inset: 0; z-index: 0; pointer-events: none; overflow: hidden; --blob: #1C6B6A; }
+[data-theme="light"] .l-bg { --blob: #9db5c1; }
+.l-bg::before { content: ""; position: absolute; inset: 0; background-image: linear-gradient(var(--border-soft) 1px, transparent 1px), linear-gradient(90deg, var(--border-soft) 1px, transparent 1px); background-size: 56px 56px; opacity: .35; -webkit-mask-image: radial-gradient(ellipse at 50% 20%, #000 0%, transparent 70%); mask-image: radial-gradient(ellipse at 50% 20%, #000 0%, transparent 70%); animation: l-grid 14s linear infinite; }
+.l-bg i { position: absolute; border-radius: 50%; background: var(--blob); filter: blur(90px); opacity: .45; }
+.l-bg i:nth-child(1) { width: 440px; height: 440px; left: -8%; top: 4%; animation: l-drift-a 18s ease-in-out infinite; }
+.l-bg i:nth-child(2) { width: 380px; height: 380px; right: -6%; top: 30%; background: var(--accent); opacity: .16; animation: l-drift-b 22s ease-in-out infinite; }
+.l-bg i:nth-child(3) { width: 320px; height: 320px; left: 35%; bottom: -12%; animation: l-drift-a 26s ease-in-out infinite reverse; }
+main, .l-footer { position: relative; z-index: 1; }
+@keyframes l-grid { to { background-position: 0 56px, 56px 0; } }
+@keyframes l-drift-a { 0%, 100% { transform: translate(0, 0) scale(1); } 50% { transform: translate(90px, 60px) scale(1.15); } }
+@keyframes l-drift-b { 0%, 100% { transform: translate(0, 0) scale(1); } 50% { transform: translate(-80px, 70px) scale(.9); } }
+
+.l-nav { transition: box-shadow .3s ease, background-color .3s ease; }
+.l-nav.scrolled { box-shadow: 0 10px 30px #0005; background: color-mix(in srgb, var(--topbar-bg) 82%, transparent); -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px); }
+
+.l-w { display: inline-block; opacity: 0; transform: translateY(.55em); animation: l-word .75s cubic-bezier(.2, .7, .2, 1) forwards; animation-delay: calc(var(--i) * 80ms + 120ms); }
+.l-hero-copy p { animation: l-up .8s .75s cubic-bezier(.2, .7, .2, 1) both; }
+.l-cta { animation: l-up .8s .95s cubic-bezier(.2, .7, .2, 1) both; }
+.l-demo { animation: l-in 1s .3s cubic-bezier(.2, .7, .2, 1) both, l-float 6s 1.3s ease-in-out infinite; }
+@keyframes l-word { to { opacity: 1; transform: none; } }
+@keyframes l-up { from { opacity: 0; transform: translateY(22px); } to { opacity: 1; transform: none; } }
+@keyframes l-in { from { opacity: 0; transform: translateY(40px) scale(.96); } to { opacity: 1; transform: none; } }
+@keyframes l-float { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-12px); } }
+
+.l-dot { position: absolute; width: 7px; height: 7px; margin: -3.5px 0 0 -3.5px; border-radius: 50%; background: #B8F2E6; box-shadow: 0 0 10px #B8F2E6; opacity: 0; animation: l-dot 7s ease-in-out infinite; animation-delay: calc(var(--k) * 140ms); }
+@keyframes l-dot { 0% { opacity: 0; transform: scale(0); } 8% { opacity: 1; transform: scale(1.6); } 14%, 38% { opacity: 1; transform: scale(1); } 46%, 100% { opacity: 0; transform: scale(0); } }
+.l-ok { animation: l-ring 2s ease-out infinite; }
+@keyframes l-ring { 0% { box-shadow: 0 0 0 0 #31c8a699; } 100% { box-shadow: 0 0 0 14px #31c8a600; } }
+
+.landing .primary-button { position: relative; overflow: hidden; transition: background .2s, transform .2s, box-shadow .2s; }
+.landing .primary-button::after { content: ""; position: absolute; top: 0; bottom: 0; left: -60%; width: 40%; background: linear-gradient(100deg, transparent, #ffffff55, transparent); transform: skewX(-20deg); }
+.landing .primary-button:hover { transform: translateY(-2px); }
+.landing .primary-button:hover::after { animation: l-shine .8s ease; }
+.l-hero .primary-button.l-big::after { animation: l-shine 4.5s 2s ease-in-out infinite; }
+.landing .secondary-button { transition: transform .2s, border-color .2s; }
+.landing .secondary-button:hover { transform: translateY(-2px); border-color: var(--accent); }
+@keyframes l-shine { 0% { left: -60%; } 30%, 100% { left: 130%; } }
+
+.reveal { opacity: 0; transform: translateY(32px); transition: opacity .7s ease var(--d, 0ms), transform .8s cubic-bezier(.2, .7, .2, 1) var(--d, 0ms); }
+.reveal.in { opacity: 1; transform: none; }
+
+.l-steps li { transition: background .25s ease; }
+.l-steps li:hover { background: var(--bg-elev-2); }
+.l-step-n { position: relative; }
+.l-steps li.in .l-step-n { animation: l-pop .6s calc(var(--d, 0ms) + .25s) cubic-bezier(.2, 1.6, .4, 1) both; }
+.l-steps li.in .l-step-n::after { content: ""; position: absolute; inset: -1px; border-radius: 50%; border: 1px solid var(--accent); animation: l-ping 2.6s calc(var(--d, 0ms) + .8s) ease-out infinite; }
+@keyframes l-pop { from { transform: scale(0) rotate(-90deg); } to { transform: none; } }
+@keyframes l-ping { 0% { transform: scale(1); opacity: .7; } 70%, 100% { transform: scale(1.9); opacity: 0; } }
+
+.l-features svg { transition: transform .3s cubic-bezier(.2, 1.6, .4, 1); }
+.l-features li:hover svg { transform: translateY(-4px) scale(1.15) rotate(-6deg); }
+
+.l-final .primary-button { --glow: #B8F2E655; animation: l-glow 2.4s ease-in-out infinite; }
+[data-theme="light"] .l-final .primary-button { --glow: #24313744; }
+@keyframes l-glow { 0%, 100% { box-shadow: 0 0 0 0 var(--glow); } 50% { box-shadow: 0 0 0 14px #0000; } }
+
+
+/* ============================================================
+   DECORAÇÃO AMPLIADA — hero rico, passos temáticos e cards
+   ============================================================ */
+
+/* ----- Hero: eyebrow, badges, stats ----- */
+.l-eyebrow { display: inline-flex; align-items: center; gap: 8px; padding: 7px 12px; border-radius: 999px; border: 1px solid color-mix(in srgb, var(--accent) 45%, var(--border)); background: color-mix(in srgb, var(--accent) 12%, transparent); color: var(--accent); font-size: 12px; font-weight: 600; letter-spacing: .3px; animation: l-up .7s .15s cubic-bezier(.2,.7,.2,1) both; }
+.l-eyebrow svg { color: currentColor; }
+
+.l-hero-badges { list-style: none; margin: 18px 0 0; padding: 0; display: flex; flex-wrap: wrap; gap: 8px 18px; animation: l-up .8s .55s cubic-bezier(.2,.7,.2,1) both; }
+.l-hero-badges li { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--text-soft); }
+.l-hero-badges svg { color: #31c8a6; }
+
+.l-stats { margin: 34px 0 0; display: flex; flex-wrap: wrap; gap: 14px; animation: l-up .8s 1.1s cubic-bezier(.2,.7,.2,1) both; }
+.l-stats > div { padding: 12px 16px; border-radius: 10px; border: 1px solid var(--border); background: var(--bg-elev); min-width: 120px; }
+.l-stats dt { font-size: 11px; text-transform: uppercase; letter-spacing: .6px; color: var(--text-soft); }
+.l-stats dd { margin: 4px 0 0; font-size: 20px; font-weight: 700; color: var(--text); letter-spacing: -.4px; }
+.l-stats > div:first-child dd { color: #31c8a6; }
+
+/* ----- Cabeçalho de seção (kicker + subtítulo) ----- */
+.l-section-head { margin-bottom: 36px; }
+.l-kicker { display: inline-block; margin-bottom: 10px; font-size: 11px; font-weight: 700; letter-spacing: 1.6px; text-transform: uppercase; color: var(--accent); }
+.l-section-head h2 { margin-bottom: 12px; }
+.l-sub { margin: 0; max-width: 60ch; font-size: 15px; line-height: 1.6; color: var(--text-soft); }
+
+/* ============================================================
+   COMO FUNCIONA — passos temáticos, cada um com personalidade
+   ============================================================ */
+.l-steps-section { position: relative; }
+.l-steps { border-radius: 16px; }
+.l-step {
+  --tone: var(--accent);
+  position: relative; padding: 30px 28px 24px; display: flex; flex-direction: column;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--tone) 8%, transparent), transparent 46%);
+  transition: background .3s ease, transform .3s ease;
+}
+.l-step::before {
+  content: ""; position: absolute; inset: 0 0 auto; height: 3px;
+  background: linear-gradient(90deg, var(--tone), transparent 85%);
+  opacity: .85; transform: scaleX(.18); transform-origin: left;
+  transition: transform .7s cubic-bezier(.2,.7,.2,1);
+}
+.l-step.in::before { transform: scaleX(1); }
+.l-step:hover { transform: translateY(-3px); background: linear-gradient(180deg, color-mix(in srgb, var(--tone) 14%, transparent), transparent 52%); }
+.l-step::after {
+  content: attr(data-step); position: absolute; right: 20px; top: 14px;
+  font-size: 44px; font-weight: 800; line-height: 1; letter-spacing: -2px;
+  color: color-mix(in srgb, var(--tone) 22%, transparent);
+  pointer-events: none; transition: color .3s ease;
+}
+.l-step:hover::after { color: color-mix(in srgb, var(--tone) 42%, transparent); }
+
+.l-step-ico {
+  display: grid; place-items: center; width: 46px; height: 46px; border-radius: 12px;
+  color: var(--tone); border: 1px solid color-mix(in srgb, var(--tone) 40%, transparent);
+  background: color-mix(in srgb, var(--tone) 12%, transparent);
+  transition: transform .3s cubic-bezier(.2,1.6,.4,1), box-shadow .3s ease;
+}
+.l-step:hover .l-step-ico { transform: translateY(-3px) scale(1.06) rotate(-4deg); box-shadow: 0 10px 24px color-mix(in srgb, var(--tone) 30%, transparent); }
+
+.l-step-n { position: absolute; left: 28px; top: 30px; width: 0; height: 0; overflow: hidden; } /* mantido por compatibilidade com CSS antigo */
+
+.l-step-tag { display: inline-block; margin: 16px 0 0; font-size: 11px; font-weight: 700; letter-spacing: 1.2px; text-transform: uppercase; color: var(--tone); }
+.l-step h3 { margin: 6px 0 8px; font-size: 18px; }
+.l-step p { margin: 0; }
+.l-step-list { list-style: none; margin: 16px 0 0; padding: 0; display: grid; gap: 7px; }
+.l-step-list li { position: relative; padding-left: 18px; font-size: 13px; color: var(--text-soft); }
+.l-step-list li::before {
+  content: ""; position: absolute; left: 0; top: 6px; width: 8px; height: 8px; border-radius: 50%;
+  background: var(--tone); box-shadow: 0 0 0 3px color-mix(in srgb, var(--tone) 18%, transparent);
+}
+.l-step-foot { margin-top: auto; padding-top: 18px; display: inline-flex; align-items: center; gap: 7px; font-size: 12px; font-weight: 600; color: var(--tone); }
+.l-step-foot svg { color: currentColor; }
+
+/* Tema claro para passos */
+[data-theme="light"] .l-step { background: linear-gradient(180deg, color-mix(in srgb, var(--tone) 12%, transparent), transparent 48%); }
+[data-theme="light"] .l-step::after { color: color-mix(in srgb, var(--tone) 30%, transparent); }
+
+/* ============================================================
+   RECURSOS — cards com cor própria, tag, mock e hover 3D
+   ============================================================ */
+.l-features { gap: 22px; }
+.l-feature {
+  --tone: var(--accent);
+  position: relative; display: flex; flex-direction: column; gap: 10px;
+  padding: 24px; border-radius: 16px; border: 1px solid var(--border);
+  background:
+    radial-gradient(120% 90% at 0% 0%, color-mix(in srgb, var(--tone) 12%, transparent), transparent 60%),
+    var(--bg-elev);
+  transition: transform .35s cubic-bezier(.2,.7,.2,1), box-shadow .35s ease, border-color .35s ease;
+}
+.l-feature::before {
+  content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 2px; border-radius: 0 0 16px 16px;
+  background: linear-gradient(90deg, transparent, var(--tone), transparent);
+  opacity: 0; transition: opacity .35s ease;
+}
+.l-feature:hover { transform: translateY(-6px); border-color: color-mix(in srgb, var(--tone) 45%, var(--border)); box-shadow: 0 22px 48px #0006; }
+.l-feature:hover::before { opacity: .9; }
+
+.l-feature-top { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.l-feature-ico {
+  display: grid; place-items: center; width: 48px; height: 48px; border-radius: 12px;
+  color: var(--tone); border: 1px solid color-mix(in srgb, var(--tone) 38%, transparent);
+  background: color-mix(in srgb, var(--tone) 12%, transparent);
+  transition: transform .3s cubic-bezier(.2,1.6,.4,1);
+}
+.l-feature:hover .l-feature-ico { transform: translateY(-3px) scale(1.08) rotate(-5deg); }
+.l-feature-tag {
+  font-size: 10px; font-weight: 700; letter-spacing: 1.2px; text-transform: uppercase;
+  padding: 5px 10px; border-radius: 999px;
+  color: var(--tone); border: 1px solid color-mix(in srgb, var(--tone) 40%, transparent);
+  background: color-mix(in srgb, var(--tone) 10%, transparent);
+}
+.l-feature strong { font-size: 17px; margin: 4px 0 0; }
+.l-feature p { max-width: none; }
+
+/* Mini-mocks visuais por recurso */
+.l-feature-mock {
+  margin-top: 6px; min-height: 58px; border-radius: 10px; padding: 10px 12px;
+  border: 1px dashed color-mix(in srgb, var(--tone) 35%, var(--border));
+  background: color-mix(in srgb, var(--tone) 5%, transparent);
+  display: flex; align-items: center; gap: 8px; overflow: hidden;
+}
+/* mock 1: caixa de detecção + nome */
+.m-box { position: relative; width: 34px; height: 34px; border: 1.5px solid var(--tone); border-radius: 6px; flex: none; }
+.m-box::after { content: ""; position: absolute; inset: 6px; border-radius: 50%; background: color-mix(in srgb, var(--tone) 28%, transparent); }
+.m-name { font-size: 12px; font-weight: 600; color: var(--text); padding: 4px 9px; border-radius: 6px; background: color-mix(in srgb, var(--tone) 16%, transparent); border: 1px solid color-mix(in srgb, var(--tone) 30%, transparent); }
+/* mock 2: drop + miniaturas */
+.m-drop { font-size: 12px; color: var(--text-soft); padding: 6px 10px; border-radius: 6px; border: 1px dashed color-mix(in srgb, var(--tone) 45%, transparent); }
+.m-mini { width: 22px; height: 22px; border-radius: 5px; background: color-mix(in srgb, var(--tone) 30%, transparent); }
+.m-mini + .m-mini { background: color-mix(in srgb, var(--tone) 55%, transparent); }
+/* mock 3: barras de gráfico animadas */
+.l-feature-mock .m-bar { flex: 1; height: var(--h, 50%); min-height: 8px; border-radius: 4px 4px 2px 2px; background: linear-gradient(180deg, var(--tone), color-mix(in srgb, var(--tone) 40%, transparent)); transform-origin: bottom; animation: l-bar 2.4s ease-in-out infinite alternate; }
+.l-feature-mock .m-bar:nth-child(2) { animation-delay: .2s; }
+.l-feature-mock .m-bar:nth-child(3) { animation-delay: .4s; }
+.l-feature-mock .m-bar:nth-child(4) { animation-delay: .6s; }
+.l-feature-mock .m-bar:nth-child(5) { animation-delay: .8s; }
+@keyframes l-bar { from { transform: scaleY(.55); } to { transform: scaleY(1); } }
+/* mock 4: papéis/perfis */
+.m-role { font-size: 12px; font-weight: 600; padding: 5px 10px; border-radius: 999px; color: #0b2b23; background: var(--tone); }
+.m-role--alt { color: var(--tone); background: transparent; border: 1px solid color-mix(in srgb, var(--tone) 50%, transparent); }
+
+[data-theme="light"] .l-feature { box-shadow: none; }
+
+/* ============================================================
+   PRIVACIDADE
+   ============================================================ */
+.l-priv-grid { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; }
+.l-priv-grid li {
+  --tone: var(--accent);
+  padding: 20px; border-radius: 14px; border: 1px solid var(--border); background: var(--bg-elev);
+  transition: transform .3s ease, border-color .3s ease;
+}
+.l-priv-grid li:hover { transform: translateY(-4px); border-color: color-mix(in srgb, var(--tone) 45%, var(--border)); }
+.l-priv-ico { display: grid; place-items: center; width: 38px; height: 38px; border-radius: 10px; margin-bottom: 12px; color: var(--tone); border: 1px solid color-mix(in srgb, var(--tone) 38%, transparent); background: color-mix(in srgb, var(--tone) 12%, transparent); }
+.l-priv-grid strong { display: block; margin-bottom: 6px; font-size: 15px; }
+.l-priv-grid p { margin: 0; font-size: 13px; line-height: 1.55; color: var(--text-soft); }
+
+/* ============================================================
+   FAQ
+   ============================================================ */
+.l-faq { max-width: 900px; }
+.l-details { border: 1px solid var(--border); border-radius: 12px; background: var(--bg-elev); padding: 4px 20px; margin-bottom: 10px; transition: border-color .25s ease; }
+.l-details + .l-details { margin-top: 0; }
+.l-details[open] { border-color: color-mix(in srgb, var(--accent) 45%, var(--border)); }
+.l-details summary { list-style: none; cursor: pointer; padding: 16px 0; display: flex; align-items: center; justify-content: space-between; gap: 16px; font-size: 15px; font-weight: 600; color: var(--text); }
+.l-details summary::-webkit-details-marker { display: none; }
+.l-chev { width: 10px; height: 10px; border-right: 2px solid var(--accent); border-bottom: 2px solid var(--accent); transform: rotate(45deg); transition: transform .25s ease; flex: none; }
+.l-details[open] .l-chev { transform: rotate(-135deg); }
+.l-details p { margin: 0 0 16px; font-size: 14px; line-height: 1.65; color: var(--text-soft); }
+.l-details p em { color: var(--text); font-style: normal; font-weight: 600; }
+
+/* ============================================================
+   CTA FINAL reforçado
+   ============================================================ */
+.l-final { position: relative; }
+.l-final-actions { display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 18px; }
+.l-final-note { display: inline-flex; align-items: center; gap: 6px; margin: 0; font-size: 12px; color: var(--text-soft); }
+
+/* ============================================================
+   Responsivo das novas seções
+   ============================================================ */
+@media (max-width: 900px) {
+  .l-priv-grid { grid-template-columns: 1fr 1fr; }
+}
+@media (max-width: 560px) {
+  .l-hero-badges { gap: 6px 12px; }
+  .l-stats > div { flex: 1; min-width: 0; }
+  .l-priv-grid { grid-template-columns: 1fr; }
+  .l-details summary { font-size: 14px; }
+}
+
+/* ============================================================
+   Movimento reduzido — extensão para tudo que é novo
+   ============================================================ */
+@media (prefers-reduced-motion: reduce) {
+  .l-eyebrow, .l-hero-badges, .l-stats, .l-step::before, .l-feature-mock .m-bar {
+    animation: none !important; opacity: 1 !important; transform: none !important;
+  }
+  .l-step:hover, .l-feature:hover, .l-priv-grid li:hover { transform: none; }
+}
+
+/* ============================================================
+   AJUSTE DE LEITURA — aumenta fonte do conteúdo corrido
+   (não altera títulos nem elementos de destaque)
+   ============================================================ */
+
+/* Corpo de texto padrão */
+body.landing { font-size: 17px; }
+
+/* Hero: parágrafo e badges */
+.l-hero p { font-size: 19px; line-height: 1.65; }
+.l-hero-badges li { font-size: 15px; }
+
+/* Subtítulos de seção */
+.l-sub { font-size: 17px; }
+
+/* Como funciona: parágrafos e listas dos passos */
+.l-step p { font-size: 16px; line-height: 1.65; }
+.l-step-list li { font-size: 15px; line-height: 1.55; }
+
+/* Recursos: descrição dos cards */
+.l-feature p { font-size: 16px; line-height: 1.65; }
+
+/* Privacidade */
+.l-priv-grid p { font-size: 15px; line-height: 1.6; }
+
+/* FAQ */
+.l-details p { font-size: 16px; line-height: 1.7; }
+
+/* CTA final: texto e nota */
+.l-final p { font-size: 17px; line-height: 1.65; }
+.l-final-note { font-size: 13px; }
+
+/* Rodapé */
+.l-footer { font-size: 13px; }
+
+/* Links da navbar continuam discretos, mas um pouco maiores */
+.l-nav-links a { font-size: 14px; }
+
+/* Mobile: um pouco mais contido para não quebrar layout */
+@media (max-width: 560px) {
+  .l-hero p { font-size: 17px; }
+  .l-sub { font-size: 16px; }
+  .l-step p, .l-feature p, .l-details p { font-size: 15px; }
+  .l-step-list li, .l-priv-grid p { font-size: 14px; }
+}
+
+/* ============================================================
+   DEMO: encaixa a caixa de reconhecimento na cabeça do boneco
+   ============================================================ */
+
+/* O boneco ocupa uma área previsível no container */
+.l-demo-view { position: relative; }
+.l-person {
+  position: absolute;
+  left: 50%;
+  bottom: 0;
+  width: 58%;
+  height: 92%;
+  transform: translateX(-50%);
+  color: #B8F2E6;
+  opacity: .35;
+}
+
+/* Coordenadas do rosto no SVG (viewBox 200x240):
+   cx=100, cy=92, rx=38, ry=48
+   Como o SVG é desenhado em width=58%, height=92% do view,
+   a elipse fica em:
+     left  = 50% - (38/200)*58% ≈ 39%  → largura ≈ (76/200)*58% ≈ 22%
+     top   = (92-48)/240 * 92% ≈ 17%  → altura ≈ (96/240)*92% ≈ 37%
+   O retângulo abaixo fica um pouco maior que o rosto (margem ~2%),
+   para dar o efeito de "detecção". */
+.l-demo .l-box {
+  left: 37%;
+  top: 15%;
+  width: 26%;
+  height: 42%;
+  border: 1px solid #00ff00aa;
+}
+
+/* Cantos do retângulo */
+.l-demo .l-box i { width: 16px; height: 16px; }
+
+/* Pontos de referência: posicionados em % do PRÓPRIO retângulo,
+   que agora coincide com o rosto. Recalculados para olhos, nariz e boca. */
+.l-demo .l-dot { width: 6px; height: 6px; margin: -3px 0 0 -3px; }
+.l-demo .l-dot:nth-of-type(1) { left: 30%; top: 32%; }  /* olho esq. */
+.l-demo .l-dot:nth-of-type(2) { left: 70%; top: 32%; }  /* olho dir. */
+.l-demo .l-dot:nth-of-type(3) { left: 50%; top: 52%; }  /* nariz     */
+.l-demo .l-dot:nth-of-type(4) { left: 36%; top: 74%; }  /* boca esq. */
+.l-demo .l-dot:nth-of-type(5) { left: 64%; top: 74%; }  /* boca dir. */
+
+/* A etiqueta "Analisando…/Maria" fica logo acima do retângulo */
+.l-demo .l-tag {
+  left: 0;
+  top: auto;
+  bottom: calc(100% + 6px);
+}
+
+/* O painel de identificação fica logo abaixo do retângulo,
+   acompanhando a posição do rosto */
+.l-demo .l-ident {
+  left: 20%;
+  right: 20%;
+  bottom: 10%;
+}
+
+/* Movimento do retângulo acompanhando levemente a cabeça */
+@keyframes l-track {
+  0%, 100% { transform: translate(0, 0) rotate(0deg); }
+  50%      { transform: translate(1.2%, 1.4%) rotate(-.6deg); }
+}
+.l-demo .l-box {
+  animation: l-track 7s ease-in-out infinite;
+  transform-origin: 50% 50%;
+}
+
+/* Ajuste no mobile: boneco um pouco maior e retângulo proporcional */
+@media (max-width: 900px) {
+  .l-person { width: 62%; height: 94%; }
+  .l-demo .l-box { left: 35%; width: 30%; top: 14%; height: 44%; }
+  .l-demo .l-ident { left: 16%; right: 16%; bottom: 8%; }
+}
+@media (max-width: 560px) {
+  .l-demo .l-box { left: 34%; width: 32%; }
+  .l-demo .l-ident { left: 12%; right: 12%; }
+}
+
+/* Movimento reduzido: sem tracking, caixa estática sobre o rosto */
+@media (prefers-reduced-motion: reduce) {
+  .l-demo .l-box { animation: none !important; }
+}
