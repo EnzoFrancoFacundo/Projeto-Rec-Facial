@@ -1,3 +1,4 @@
+import threading
 import os
 import cv2
 import base64
@@ -71,6 +72,26 @@ def injetar_assets():
 
 ENCODINGS_CACHE = {"nomes": [], "vecs": [], "funcoes": [], "matriz": None}
 ULTIMOS_ACESSOS = {}
+
+# --- Rastreamento de rostos já identificados (evita recalcular o encoding a cada frame) ---
+TRACKS = {}                # chave da sessão -> lista de rostos rastreados
+TRACK_LOCK = threading.Lock()
+TRACK_TTL = 1.5            # s: sem ver o rosto por esse tempo, o rastreio é descartado
+TRACK_REVERIFICAR = 3.0    # s: mesmo rastreado, refaz o encoding a cada X segundos
+TRACK_IOU_MIN = 0.5        # sobreposição mínima entre a caixa nova e a anterior
+
+
+def _iou(a, b):
+    """IoU entre duas caixas no formato (top, right, bottom, left)."""
+    t1, r1, b1, l1 = a
+    t2, r2, b2, l2 = b
+    iw = min(r1, r2) - max(l1, l2)
+    ih = min(b1, b2) - max(t1, t2)
+    if iw <= 0 or ih <= 0:
+        return 0.0
+    inter = iw * ih
+    uniao = (r1 - l1) * (b1 - t1) + (r2 - l2) * (b2 - t2) - inter
+    return inter / uniao if uniao > 0 else 0.0
 
 
 def normalizar_nome(nome):
@@ -223,7 +244,8 @@ def adicionar_ao_cache(nome, vec, funcao="Pesquisador"):
     else:
         ENCODINGS_CACHE["matriz"] = np.vstack([ENCODINGS_CACHE["matriz"], vec])
 
-
+    with TRACK_LOCK:
+        TRACKS.clear()
 init_db()
 recarregar_cache_encodings()
 
@@ -784,25 +806,68 @@ def reconhecer():
 
     if len(faces) > 0:
         boxes_small = [(int(y), int(x + w), int(y + h), int(x)) for (x, y, w, h) in faces]
-        rgb_small = cv2.cvtColor(small_frame, cv2.COLOR_BGR2RGB)
-        encodings_frame = face_recognition.face_encodings(rgb_small, boxes_small)
 
-        for (top, right, bottom, left), encoding_atual in zip(boxes_small, encodings_frame):
-            nome = "Desconhecido"
-            funcao = ""
-            reconhecido = False
+        chave = session.get('usuario')
+        agora = time.time()
+        with TRACK_LOCK:
+            tracks = [t for t in TRACKS.get(chave, []) if agora - t["visto"] <= TRACK_TTL]
 
-            distancias = np.linalg.norm(matriz_conhecidos - encoding_atual, axis=1)
-            if len(distancias) > 0:
-                melhor_indice = int(np.argmin(distancias))
-                if distancias[melhor_indice] <= TOLERANCIA:
-                    nome = nomes_conhecidos[melhor_indice]
-                    funcao = (ENCODINGS_CACHE["funcoes"][melhor_indice]
-                              if melhor_indice < len(ENCODINGS_CACHE["funcoes"])
-                              else "Pesquisador")
-                    reconhecido = True
-                    registrar_acesso(nome)
-                    nomes_reconhecidos.append(nome)
+        # 1) Rostos que casam com um rastreio recente reaproveitam a identidade
+        identidades = [None] * len(boxes_small)   # (nome, funcao, reconhecido, verificado_em)
+        usados = set()
+        pendentes = []
+        for i, box in enumerate(boxes_small):
+            melhor, melhor_iou = None, TRACK_IOU_MIN
+            for j, t in enumerate(tracks):
+                if j in usados or (agora - t["verificado"]) >= TRACK_REVERIFICAR:
+                    continue
+                v = _iou(box, t["box"])
+                if v >= melhor_iou:
+                    melhor, melhor_iou = j, v
+            if melhor is not None:
+                usados.add(melhor)
+                t = tracks[melhor]
+                identidades[i] = (t["nome"], t["funcao"], True, t["verificado"])
+            else:
+                pendentes.append(i)
+
+        # 2) Só os rostos sem rastreio (novos, desconhecidos ou a reverificar) passam pelo dlib
+        if pendentes:
+            rgb_small = cv2.cvtColor(small_frame, cv2.COLOR_BGR2RGB)
+            boxes_pend = [boxes_small[i] for i in pendentes]
+            encodings_pend = face_recognition.face_encodings(rgb_small, boxes_pend)
+
+            for i, encoding_atual in zip(pendentes, encodings_pend):
+                nome = "Desconhecido"
+                funcao = ""
+                reconhecido = False
+
+                distancias = np.linalg.norm(matriz_conhecidos - encoding_atual, axis=1)
+                if len(distancias) > 0:
+                    melhor_indice = int(np.argmin(distancias))
+                    if distancias[melhor_indice] <= TOLERANCIA:
+                        nome = nomes_conhecidos[melhor_indice]
+                        funcao = (ENCODINGS_CACHE["funcoes"][melhor_indice]
+                                  if melhor_indice < len(ENCODINGS_CACHE["funcoes"])
+                                  else "Pesquisador")
+                        reconhecido = True
+                identidades[i] = (nome, funcao, reconhecido, agora)
+
+        # 3) Monta a resposta, registra acessos e atualiza os rastreios
+        novos_tracks = []
+        for box, ident in zip(boxes_small, identidades):
+            if ident is None:
+                continue
+            nome, funcao, reconhecido, verificado = ident
+            top, right, bottom, left = box
+
+            if reconhecido:
+                registrar_acesso(nome)
+                nomes_reconhecidos.append(nome)
+                novos_tracks.append({
+                    "box": box, "nome": nome, "funcao": funcao,
+                    "visto": agora, "verificado": verificado,
+                })
 
             resultado.append({
                 "nome": nome,
@@ -811,8 +876,13 @@ def reconhecer():
                 "box": [left / w_small, top / h_small, (right - left) / w_small, (bottom - top) / h_small],
             })
 
-    return jsonify({"faces": resultado, "reconhecidos": nomes_reconhecidos})
+        with TRACK_LOCK:
+            TRACKS[chave] = novos_tracks
+    else:
+        with TRACK_LOCK:
+            TRACKS.pop(session.get('usuario'), None)
 
+    return jsonify({"faces": resultado, "reconhecidos": nomes_reconhecidos})
 
 @app.route('/api/registros', methods=['GET'])
 @login_required
@@ -872,17 +942,27 @@ def _caminho_foto_seguro(nome, caminho_db):
 @app.route('/api/fotos', methods=['GET'])
 @admin_required
 def listar_fotos():
+    from datetime import datetime
     nome = normalizar_nome(request.args.get('nome'))
     if not nome:
         return jsonify({"mensagem": "Usuário inválido!"}), 400
 
     conn = sqlite3.connect(DB_FILE)
     cursor = conn.cursor()
-    cursor.execute("SELECT id FROM encodings WHERE nome = ? ORDER BY id", (nome,))
-    ids = [r[0] for r in cursor.fetchall()]
+    cursor.execute("SELECT id, caminho_foto FROM encodings WHERE nome = ? ORDER BY id", (nome,))
+    linhas = cursor.fetchall()
     conn.close()
 
-    fotos = [{"id": fid, "numero": i} for i, fid in enumerate(ids, start=1)]
+    fotos = []
+    for i, (fid, caminho_db) in enumerate(linhas, start=1):
+        data = hora = None
+        caminho = _caminho_foto_seguro(nome, caminho_db)
+        if caminho and os.path.isfile(caminho):
+            dt = datetime.fromtimestamp(os.path.getmtime(caminho))
+            data = dt.strftime('%d/%m/%Y')
+            hora = dt.strftime('%H:%M')
+        fotos.append({"id": fid, "numero": i, "data": data, "hora": hora})
+
     return jsonify({"nome": nome, "fotos": fotos})
 
 
