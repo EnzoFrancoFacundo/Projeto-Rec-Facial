@@ -1,3 +1,5 @@
+import zipfile
+import tempfile
 import threading
 import os
 import cv2
@@ -704,6 +706,29 @@ def cadastrar():
     status = resultado.pop("status")
     return jsonify(resultado), status
 
+@app.route('/api/posicao_rosto', methods=['POST'])
+@admin_required
+def posicao_rosto():
+    """Só informa se o rosto está centralizado no quadro (usado no guia do cadastro)."""
+    data = request.json or {}
+    frame = base64_to_cv2(data.get('image'))
+    if frame is None:
+        return jsonify({"rosto": False, "centralizado": False}), 400
+
+    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+    h, w = gray.shape[:2]
+    min_lado = max(30, int(w * 0.15))
+    faces = face_cascade.detectMultiScale(
+        gray, scaleFactor=1.2, minNeighbors=4, minSize=(min_lado, min_lado)
+    )
+    if len(faces) == 0:
+        return jsonify({"rosto": False, "centralizado": False})
+
+    x, y, fw, fh = max(faces, key=lambda f: f[2] * f[3])
+    cx = (x + fw / 2) / w
+    cy = (y + fh / 2) / h
+    centralizado = abs(cx - 0.5) <= 0.15 and abs(cy - 0.5) <= 0.18
+    return jsonify({"rosto": True, "centralizado": bool(centralizado)})
 
 @app.route('/api/adicionar_foto', methods=['POST'])
 @admin_required
@@ -1034,6 +1059,54 @@ def deletar_foto():
     recarregar_cache_encodings()
     return jsonify({"mensagem": "Foto excluída com sucesso.", "nome": nome, "total": total})
 
+@app.route('/api/backup', methods=['GET'])
+@admin_required
+def backup():
+    from datetime import datetime
+    tmp_dir = tempfile.mkdtemp(prefix="backup_")
+    try:
+        # Cópia consistente do banco, mesmo com o sistema em uso
+        db_copia = os.path.join(tmp_dir, "faces.db")
+        origem = sqlite3.connect(DB_FILE)
+        destino = sqlite3.connect(db_copia)
+        try:
+            origem.backup(destino)
+        finally:
+            destino.close()
+            origem.close()
+
+        carimbo = datetime.now().strftime('%Y-%m-%d_%H-%M')
+        zip_path = os.path.join(tmp_dir, "backup.zip")
+        with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zf:
+            zf.write(db_copia, "faces.db")
+            for raiz, _, arquivos in os.walk(DATASET_DIR):
+                for arq in arquivos:
+                    completo = os.path.join(raiz, arq)
+                    try:
+                        zf.write(completo, os.path.relpath(completo, BASE_DIR))
+                    except FileNotFoundError:
+                        pass  # foto apagada durante o backup
+        tamanho = os.path.getsize(zip_path)
+    except Exception as e:
+        shutil.rmtree(tmp_dir, ignore_errors=True)
+        return jsonify({"mensagem": f"Erro ao gerar o backup: {e}"}), 500
+
+    def enviar():
+        try:
+            with open(zip_path, 'rb') as f:
+                while True:
+                    bloco = f.read(1024 * 1024)
+                    if not bloco:
+                        break
+                    yield bloco
+        finally:
+            shutil.rmtree(tmp_dir, ignore_errors=True)  # apaga os temporários ao terminar
+
+    return Response(enviar(), mimetype='application/zip', headers={
+        "Content-Disposition": f'attachment; filename="backup_painel_facial_{carimbo}.zip"',
+        "Content-Length": str(tamanho),
+        "Cache-Control": "no-store",
+    })
 
 @app.route('/api/renomear', methods=['POST'])
 @admin_required
