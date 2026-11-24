@@ -100,6 +100,12 @@ document.addEventListener('click', e => {
 });
 
 // ===== Tema (claro / escuro) =====
+// ===== Tema (claro / escuro / automático) =====
+const mqClaro = window.matchMedia('(prefers-color-scheme: light)');
+const temaDoSistema = () => (mqClaro.matches ? 'light' : 'dark');
+function modoTema() {
+  try { return localStorage.getItem('tema_modo') || localStorage.getItem('tema') || 'dark'; } catch (e) { return 'dark'; }
+}
 function pintarBotoesTema(tema) {
   const html = tema === 'light' ? ico('moon', 18) : ico('sun', 18);
   $$('.theme-toggle').forEach(btn => { btn.innerHTML = html; });
@@ -110,15 +116,22 @@ function aplicarTema(tema) {
   pintarBotoesTema(tema);
 }
 let _temaTimer;
-function alternarTema() {
+function definirModoTema(modo) {
+  try { localStorage.setItem('tema_modo', modo); } catch (e) {}
   const root = document.documentElement;
-  const atual = root.getAttribute('data-theme') || 'dark';
-  // Liga a transição suave só durante a troca (não afeta o carregamento nem o hover)
   root.classList.add('theme-transition');
-  aplicarTema(atual === 'light' ? 'dark' : 'light');
+  aplicarTema(modo === 'auto' ? temaDoSistema() : modo);
   clearTimeout(_temaTimer);
   _temaTimer = setTimeout(() => root.classList.remove('theme-transition'), 500);
+  marcarOpcoes();
 }
+// Botão do topo: alterna entre claro e escuro (e sai do modo automático)
+function alternarTema() {
+  const atual = document.documentElement.getAttribute('data-theme') || 'dark';
+  definirModoTema(atual === 'light' ? 'dark' : 'light');
+}
+// No modo automático, acompanha o sistema em tempo real
+mqClaro.addEventListener?.('change', () => { if (modoTema() === 'auto') aplicarTema(temaDoSistema()); });
 document.addEventListener('click', e => {
   const btn = e.target.closest('.theme-toggle');
   if (btn) { e.preventDefault(); alternarTema(); }
@@ -141,7 +154,7 @@ function setPage(p) {
 
 async function loadData() {
   const { data } = await api('/api/dados');
-  state.people = (data.usuarios || []).map(u => ({ id: u[0], nome: u[1], fotos: u[3], role: u[4] || 'user', funcao: u[5] || 'Pesquisador', ativo: u[6] !== 0 }));
+  state.people = (data.usuarios || []).map(u => ({ id: u[0], nome: u[1], fotos: u[3], funcao: u[5] || 'Pesquisador', ativo: u[6] !== 0 }));
   state.acessos = data.acessos || [];
 }
 
@@ -218,9 +231,8 @@ function renderUsers() {
     return `<tr${p.ativo ? '' : ' class="inactive-row"'}><td><div class="user-cell">${avatar(p.nome)}<strong>${esc(p.nome)}</strong></div></td>
       <td class="muted">#${p.id}</td><td class="muted">${p.fotos}/${MIN}</td>
       <td>${esc(p.funcao)}</td>
-      <td>${p.role === 'admin' ? 'Administrador' : 'Usuário'}</td>
       <td><span class="status ${p.ativo ? 'on' : 'off'}"><i></i>${p.ativo ? 'Ativo' : 'Inativo'}</span></td>
-      <td class="admin-only"><div class="row-actions"><button title="Editar" data-act="edit" data-nome="${esc(p.nome)}">${ico('edit', 17)}</button>
+      <td class="admin-only"><div class="row-actions"><button title="Ver fotos" data-act="gallery" data-nome="${esc(p.nome)}">${ico('image', 17)}</button><button title="Editar" data-act="edit" data-nome="${esc(p.nome)}">${ico('edit', 17)}</button>
       <button title="${protegido ? 'Não é possível inativar esta conta' : (p.ativo ? 'Inativar' : 'Ativar')}" data-act="toggle" data-nome="${esc(p.nome)}" data-ativo="${p.ativo ? 1 : 0}"${protegido ? ' disabled' : ''}>${ico('power', 17)}</button>
       <button class="danger" title="Excluir" data-act="del" data-nome="${esc(p.nome)}">${ico('trash', 17)}</button></div></td></tr>`;
   }).join('');
@@ -243,6 +255,70 @@ async function removeUser(nome) {
   popup(data.mensagem, 'success');
   loadUsers();
 }
+
+// ---- Galeria de fotos ----
+const G = { nome: null };
+
+async function abrirGaleria(nome) {
+  G.nome = nome;
+  $('#g-title').textContent = nome;
+  $('#g-grid').innerHTML = '';
+  $('#g-count').textContent = 'Carregando...';
+  $('#g-empty').hidden = true;
+  $('#gallery-modal').hidden = false;
+  await carregarGaleria();
+}
+function fecharGaleria() {
+  $('#g-zoom').hidden = true;
+  $('#gallery-modal').hidden = true;
+  G.nome = null;
+}
+async function carregarGaleria() {
+  if (!G.nome) return;
+  const { ok, data } = await api(`/api/fotos?nome=${encodeURIComponent(G.nome)}`);
+  if (!ok) return popup(data.mensagem || 'Não foi possível carregar as fotos.', 'error');
+  const fotos = data.fotos || [];
+  $('#g-count').textContent = `${fotos.length} foto(s) · recomendado: ${MIN}`;
+  $('#g-empty').hidden = fotos.length > 0;
+  $('#g-grid').innerHTML = fotos.map(f => `<figure class="gallery-item">
+    <button type="button" class="gallery-thumb" data-act="zoom-foto" data-id="${f.id}" title="Ampliar">
+      <img src="/api/foto/${f.id}" loading="lazy" alt="Foto ${f.numero}" onerror="this.parentElement.classList.add('missing')">
+    </button>
+        <figcaption>
+      <div class="photo-meta">
+        <span>#${f.numero}</span>
+        <small>${f.data ? `${f.data} · ${f.hora}` : 'Data indisponível'}</small>
+      </div>
+      <button type="button" title="Excluir foto" data-act="del-foto" data-id="${f.id}">${ico('trash', 15)}</button>
+    </figcaption></figure>`).join('');
+}
+function abrirZoom(id) {
+  $('#g-zoom-img').src = `/api/foto/${id}?full=1`;
+  $('#g-zoom').hidden = false;
+}
+async function removerFoto(id) {
+  const ok = await confirmar('Excluir esta foto? Ela deixará de ser usada no reconhecimento e não poderá ser recuperada.', 'Excluir foto');
+  if (!ok) return;
+  const { ok: sucesso, data } = await api('/api/deletar_foto', { id });
+  if (!sucesso) return popup(data.mensagem || 'Não foi possível excluir a foto.', 'error');
+  await carregarGaleria();
+  loadData().then(() => { if (state.page === 'users') renderUsers(); });
+  if (data.total < MIN) {
+    popup(`${data.nome} agora tem ${data.total} foto(s). O recomendado é ter ${MIN} para um bom reconhecimento.`, 'warn');
+  } else {
+    popup(data.mensagem, 'success');
+  }
+}
+// Fecha só ao clicar no fundo escuro
+$('#gallery-modal').onmousedown = e => { if (e.target === e.currentTarget) fecharGaleria(); };
+// ESC: fecha primeiro o zoom, depois a galeria (o popup de confirmação tem prioridade)
+document.addEventListener('keydown', e => {
+  if (e.key !== 'Escape') return;
+  const pop = document.getElementById('popup');
+  if (pop && !pop.hidden) return;
+  if (!$('#g-zoom').hidden) $('#g-zoom').hidden = true;
+  else if (!$('#gallery-modal').hidden) fecharGaleria();
+});
 
 // ---- Recognition() ----
 const rec = { on: false, stream: null, faces: [] };
@@ -334,14 +410,77 @@ function setRecUI(on) {
 setInterval(() => state.page === 'recognition' && rec.on && loadFeed(), 5000);
 
 // ---- Settings() ----
-$('#cfg-notify').checked = localStorage.notify !== '0';
-$('#cfg-save').onclick = () => {
-  localStorage.notify = $('#cfg-notify').checked ? '1' : '0';
-  popup('Configurações salvas.', 'success');
+const PREFS = {
+  get(k, pad) { try { const v = localStorage.getItem(k); return v === null ? pad : v; } catch (e) { return pad; } },
+  set(k, v) { try { localStorage.setItem(k, v); } catch (e) {} },
 };
 
+function aplicarFonte(v) {
+  const root = document.documentElement;
+  if (v === 'grande' || v === 'muito-grande') root.setAttribute('data-fonte', v);
+  else root.removeAttribute('data-fonte');
+  PREFS.set('fonte', v);
+}
+function aplicarContraste(on) {
+  const root = document.documentElement;
+  if (on) root.setAttribute('data-contraste', 'alto'); else root.removeAttribute('data-contraste');
+  PREFS.set('contraste', on ? '1' : '0');
+}
+function marcarOpcoes() {
+  const fonte = PREFS.get('fonte', 'normal');
+  $$('[data-setting="fonte"] button').forEach(b => b.classList.toggle('active', b.dataset.v === fonte));
+  const modo = modoTema();
+  $$('[data-setting="tema"] button').forEach(b => b.classList.toggle('active', b.dataset.v === modo));
+}
+
+document.addEventListener('click', e => {
+  const b = e.target.closest('[data-setting] button');
+  if (!b) return;
+  const tipo = b.closest('[data-setting]').dataset.setting;
+  if (tipo === 'fonte') { aplicarFonte(b.dataset.v); marcarOpcoes(); }
+  if (tipo === 'tema') definirModoTema(b.dataset.v);
+});
+
+$('#cfg-contraste').checked = PREFS.get('contraste', '0') === '1';
+$('#cfg-contraste').onchange = e => aplicarContraste(e.target.checked);
+
+$('#cfg-notify').checked = PREFS.get('notify', '1') !== '0';
+$('#cfg-notify').onchange = e => PREFS.set('notify', e.target.checked ? '1' : '0');
+
+$('#cfg-backup').onclick = () => popup('Preparando o backup. O download começa em instantes; com muitas fotos pode levar um pouco mais.', 'info', 'Backup');
+
+marcarOpcoes();
+
+// ---- Notificações em tempo real ----
+const _avisados = new Map();
+function notificarReconhecido(nome, funcao) {
+  if (PREFS.get('notify', '1') === '0') return;
+  const agora = Date.now();
+  if (agora - (_avisados.get(nome) || 0) < 10000) return;   // no máximo 1 aviso a cada 10 s por pessoa
+  _avisados.set(nome, agora);
+
+  let pilha = $('#toast-stack');
+  if (!pilha) {
+    pilha = document.createElement('div');
+    pilha.id = 'toast-stack';
+    pilha.className = 'toast-stack';
+    pilha.setAttribute('aria-live', 'polite');
+    document.body.appendChild(pilha);
+  }
+  const t = document.createElement('div');
+  t.className = 'toast-item';
+  t.innerHTML = `<span class="toast-ico">${ico('check', 16)}</span><div><strong>${esc(nome)}</strong><small>${esc(funcao || 'Reconhecido')}</small></div>`;
+  pilha.appendChild(t);
+  while (pilha.children.length > 4) pilha.firstChild.remove();
+  setTimeout(() => { t.classList.add('saindo'); setTimeout(() => t.remove(), 300); }, 4000);
+}
+
+// Normaliza o nome do mesmo jeito que o servidor (normalizar_nome)
+const norm = s => String(s).normalize('NFKD').replace(/[\u0300-\u036f]/g, '')
+  .toLowerCase().trim().replace(/ /g, '_').replace(/[^a-z0-9_]/g, '');
+
 // ---- PersonModal() ----
-const M = { person: null, n: 0, run: false, stream: null, uploading: false };
+const M = { person: null, n: 0, run: false, stream: null, uploading: false, criados: new Set(), voo: 0, cancelando: false };
 const getFuncao = () => ($('#f-funcao').value || '').trim() || 'Pesquisador';
 
 function dots() {
@@ -352,6 +491,28 @@ function dots() {
   ).join('') + `<span>${label}</span>`;
   $('#m-submit').disabled = !($('#f-name').value.trim() && (M.person || M.n >= MIN));
 }
+// Guia de centralização: só aparece quando o rosto NÃO está centralizado
+const POS = { timer: null, busy: false, ok: false };
+const setGuide = show => $('#cap-view').classList.toggle('off-center', show);
+
+function iniciarChecagemPosicao() {
+  if (POS.timer) return;
+  POS.timer = setInterval(async () => {
+    const v = $('#cap-video');
+    if (POS.busy || !M.stream || !v.videoWidth) return;
+    POS.busy = true;
+    try {
+      const { ok, data } = await api('/api/posicao_rosto', { image: grab(v, 320) });
+      if (ok && M.stream) {
+        POS.ok = !!data.centralizado;
+        setGuide(!POS.ok);
+      }
+    } finally { POS.busy = false; }
+  }, 500);
+}
+function pararChecagemPosicao() {
+  clearInterval(POS.timer); POS.timer = null; POS.busy = false; POS.ok = false; setGuide(false);
+}
 
 function openForm(person) {
   Object.assign(M, {
@@ -359,6 +520,9 @@ function openForm(person) {
     n: person ? Number(person.fotos || 0) : 0,
     run: false,
     uploading: false,
+    criados: new Set(),
+    voo: 0,
+    cancelando: false,
   });
   const edit = !!person;
   $('#m-kicker').textContent = edit ? 'EDITAR USUÁRIO' : 'NOVO CADASTRO';
@@ -379,20 +543,55 @@ function openForm(person) {
 }
 
 function closeForm() {
-  M.run = false; M.stream?.getTracks().forEach(t => t.stop()); M.stream = null; $('#modal').hidden = true;
+  M.run = false; pararChecagemPosicao(); M.stream?.getTracks().forEach(t => t.stop()); M.stream = null; $('#modal').hidden = true;
+}
+// Registra que este nome foi criado nesta sessão (só se ele ainda não existia)
+function marcarCriado(nome) {
+  if (M.person) return;
+  if (state.people.some(p => p.nome === norm(nome))) return;
+  M.criados.add(nome);
+}
+
+// Cancelar: fecha o modal e apaga o que foi criado durante este cadastro
+async function cancelarForm() {
+  if (M.cancelando) return;
+  if (M.criados.size) {
+    const ok = await confirmar('Cancelar o cadastro? As fotos já capturadas serão apagadas.', 'Cancelar cadastro');
+    if (!ok) return;
+  }
+  M.cancelando = true;
+  M.run = false;
+  while (M.voo > 0) await sleep(100);   // espera requisições de foto em andamento terminarem
+  const nomes = [...M.criados];
+  closeForm();
+  for (const n of nomes) await api('/api/deletar', { nome: n });
+  M.criados.clear();
+  M.cancelando = false;
+  if (nomes.length) setPage(state.page);
 }
 
 async function capture() {
   if (M.run) { M.run = false; return; }
   const nome = $('#f-name').value.trim();
   if (!nome) return popup('Informe o nome antes de capturar.', 'warn');
+  marcarCriado(nome);   // <-- novo (passo 5)
   if (!M.stream) {
     try { M.stream = await navigator.mediaDevices.getUserMedia({ video: true }); } catch { return popup('Não foi possível acessar a câmera.', 'error'); }
     $('#cap-video').srcObject = M.stream; await $('#cap-video').play();
+    iniciarChecagemPosicao();
   }
   M.run = true; $('#f-name').readOnly = true; $('#cap-btn').textContent = 'Parar captura';
   while (M.run && M.n < MIN) {
-    const { ok, data } = await api('/api/cadastrar', { nome, funcao: getFuncao(), image: grab($('#cap-video')) });
+    if (!POS.ok) {
+      $('#cap-msg').textContent = 'Aguardando o rosto ser detectado e centralizado...';
+      await sleep(200);
+      continue;
+    }
+    M.voo++;   // <-- novo (passo 5)
+    let resp;
+    try { resp = await api('/api/cadastrar', { nome, funcao: getFuncao(), image: grab($('#cap-video')) }); }
+    finally { M.voo--; }
+    const { ok, data } = resp;
     $('#cap-msg').textContent = data.mensagem || '';
     if (ok) { M.n = data.total; dots(); }
     await sleep(350);
@@ -407,7 +606,7 @@ async function capture() {
 async function enviarFotos(arquivos) {
   if (M.uploading) return;
   const nome = $('#f-name').value.trim();
-  if (!nome) return popup('Informe o nome antes de enviar as fotos.', 'warn');
+  if (!nome) return popup('Informe o nome antes de enviar as fotos.', 'warn');marcarCriado(nome);
 
   M.uploading = true;
   const inp = $('#upload-input');
@@ -422,6 +621,7 @@ async function enviarFotos(arquivos) {
     fd.append('funcao', getFuncao());
     arquivos.forEach(a => fd.append('fotos', a));
 
+        M.voo++;
     const r = await fetch('/api/upload_fotos', { method: 'POST', body: fd });
     const data = await r.json().catch(() => ({}));
 
@@ -448,6 +648,7 @@ async function enviarFotos(arquivos) {
     prog.hidden = true;
     popup('Erro ao enviar as fotos.', 'error');
   } finally {
+    M.voo--;
     M.uploading = false;
     inp.disabled = false;
   }
@@ -501,7 +702,7 @@ $('#person-form').onsubmit = async e => {
   closeForm(); setPage('users');
 };
 // Fecha só ao clicar no fundo escuro. Não pode "retornar false": isso cancelaria o foco dos campos.
-$('#modal').onmousedown = e => { if (e.target === e.currentTarget) closeForm(); };
+$('#modal').onmousedown = e => { if (e.target === e.currentTarget) cancelarForm(); };
 
 // ---- Eventos globais ----
 document.addEventListener('click', async e => {
@@ -511,8 +712,13 @@ document.addEventListener('click', async e => {
   if (t.dataset.go) return setPage(t.dataset.go);
   const { act, nome } = t.dataset;
   if (act === 'new') openForm();
-  if (act === 'close') closeForm();
+  if (act === 'close') cancelarForm();
   if (act === 'edit') openForm(state.people.find(p => p.nome === nome));
+  if (act === 'gallery') abrirGaleria(nome);
+  if (act === 'close-gallery') fecharGaleria();
+  if (act === 'zoom-foto') abrirZoom(t.dataset.id);
+  if (act === 'close-zoom') $('#g-zoom').hidden = true;
+  if (act === 'del-foto') await removerFoto(Number(t.dataset.id));
   if (act === 'toggle') await toggleUser(nome, t.dataset.ativo === '1');
   if (act === 'del') await removeUser(nome);
 });
